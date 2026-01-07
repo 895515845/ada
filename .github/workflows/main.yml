@@ -1,0 +1,328 @@
+name: Build All and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a GitHub Release'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: write
+
+jobs:
+  # ========================================================
+  # 1. 构建 Server (Linux)
+  # ========================================================
+  build-server:
+    name: Build Server (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: AdaptixC2
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 make gcc g++ g++-mingw-w64 wget git
+
+      - name: Install Go
+        run: |
+          wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz -O /tmp/go.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf /tmp/go.tar.gz
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Clone patched Go (Windows 7 support)
+        run: |
+          git clone https://github.com/Adaptix-Framework/go-win7 /tmp/go-win7
+          sudo mv /tmp/go-win7 /usr/lib/go-win7
+
+      - name: Build server and extenders
+        run: |
+          cd AdaptixC2
+          make server-ext
+          make extenders || make all || make
+
+      - name: Package Server
+        run: |
+          cd AdaptixC2
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="latest"
+          fi
+          
+          mkdir -p release-package-server
+          cp -r dist/* release-package-server/
+          
+          tar -czf AdaptixServer-${VERSION}.tar.gz -C release-package-server .
+          zip -r AdaptixServer-${VERSION}.zip release-package-server/*
+
+      - name: Upload Server Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-server
+          path: |
+            AdaptixC2/*.tar.gz
+            AdaptixC2/*.zip
+
+  # ========================================================
+  # 2. 构建 Client (Linux)
+  # ========================================================
+  build-client-linux:
+    name: Build Client (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: AdaptixC2
+
+      - name: Install Qt6 Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository universe -y
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake zip \
+            qt6-base-dev qt6-base-private-dev \
+            qt6-websockets-dev qt6-declarative-dev \
+            libgl1-mesa-dev libvulkan1 \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb-*
+
+      - name: Configure CMake
+        run: |
+          cd AdaptixC2/AdaptixClient
+          cmake -B build -G "Unix Makefiles" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" \
+                -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG"
+
+      - name: Build
+        run: |
+          cd AdaptixC2/AdaptixClient
+          cmake --build build --config Release --parallel $(nproc)
+
+      - name: Package Linux Client
+        run: |
+          cd AdaptixC2/AdaptixClient
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="latest"
+          fi
+          
+          mkdir -p release-package-linux
+          cp build/AdaptixClient release-package-linux/
+          
+          tar -czf AdaptixClient-linux-${VERSION}.tar.gz -C release-package-linux .
+          zip -r AdaptixClient-linux-${VERSION}.zip release-package-linux/*
+
+      - name: Upload Linux Client Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-client-linux
+          path: |
+            AdaptixC2/AdaptixClient/*.tar.gz
+            AdaptixC2/AdaptixClient/*.zip
+
+  # ========================================================
+  # 3. 构建 Client (Windows)
+  # ========================================================
+  build-client-windows:
+    name: Build Client (Windows)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: AdaptixC2
+          submodules: recursive
+
+      - name: Install Ninja
+        run: choco install ninja --version=1.12.1 --force
+
+      - name: Install CMake
+        uses: lukka/get-cmake@v3.30.5
+
+      - name: Install Qt MinGW
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.1'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          modules: 'qtwebsockets'
+          tools: 'tools_opensslv3_x64'
+          cache: 'true'
+
+      - name: Configure CMake
+        run: |
+          cd AdaptixC2/AdaptixClient
+          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cd AdaptixC2/AdaptixClient
+          cmake --build build --config Release
+
+      - name: Package Windows Client
+        shell: pwsh
+        run: |
+          cd AdaptixC2/AdaptixClient
+          
+          # 确定版本
+          $VERSION = "latest"
+          if ("${{ github.ref }}" -match "refs/tags/") {
+            $VERSION = "${{ github.ref }}" -replace "refs/tags/", ""
+          }
+
+          # 寻找 EXE
+          $exe = Get-ChildItem -Path build -Recurse -Include AdaptixClient.exe | Select-Object -First 1
+          if (!$exe) { throw "AdaptixClient.exe not found" }
+          
+          # 创建打包目录
+          mkdir portable_adaptixclient
+          Copy-Item $exe.FullName portable_adaptixclient/
+          
+          # 部署依赖 (windeployqt)
+          windeployqt --release portable_adaptixclient/AdaptixClient.exe
+          
+          # 压缩
+          Compress-Archive -Path portable_adaptixclient/* -DestinationPath "AdaptixClient-windows-${VERSION}.zip"
+
+      - name: Upload Windows Client Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-client-windows
+          path: AdaptixC2/AdaptixClient/*.zip
+
+  # ========================================================
+  # 4. 构建 Client (macOS) - 🟢 新增
+  # ========================================================
+  build-client-macos:
+    name: Build Client (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: AdaptixC2
+
+      - name: Install dependencies
+        run: |
+          brew install make cmake openssl qt@6
+
+      - name: Build AdaptixClient
+        run: |
+          cd AdaptixC2
+          make client
+
+      - name: Package application
+        run: |
+          cd AdaptixC2
+          APP_NAME="AdaptixClient"
+          
+          # 统一版本号逻辑
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="latest"
+          fi
+          
+          ZIP_NAME="${APP_NAME}-macOS-${VERSION}.zip"
+          
+          # 假设 make client 生成的文件在 dist 目录下
+          cd dist
+          if [ -d "${APP_NAME}.app" ]; then
+            zip -r "${ZIP_NAME}" "${APP_NAME}.app"
+          elif [ -f "${APP_NAME}" ]; then
+            zip -r "${ZIP_NAME}" "${APP_NAME}"
+          else
+            zip -r "${ZIP_NAME}" .
+          fi
+          
+          echo "ZIP_FILE=${ZIP_NAME}" >> $GITHUB_ENV
+
+      - name: Upload macOS Client Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-client-macos
+          path: AdaptixC2/dist/${{ env.ZIP_FILE }}
+
+  # ========================================================
+  # 5. 发布 Release (汇总所有产物)
+  # ========================================================
+  release:
+    name: Create Release
+    # 🟢 增加 build-client-macos 到依赖列表
+    needs: [build-server, build-client-linux, build-client-windows, build-client-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') || github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_artifacts
+          pattern: artifact-*
+          merge-multiple: true
+
+      - name: List Files (Debug)
+        run: ls -R all_artifacts
+
+      - name: Determine Tag
+        id: tag_logic
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "VERSION=$VERSION" >> $GITHUB_ENV
+            echo "TAG_NAME=$VERSION" >> $GITHUB_ENV
+          else
+            echo "VERSION=latest" >> $GITHUB_ENV
+            echo "TAG_NAME=latest" >> $GITHUB_ENV
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: all_artifacts/*
+          tag_name: ${{ env.TAG_NAME }}
+          name: Adaptix Release ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Adaptix Release ${{ env.VERSION }}
+            
+            自动构建产物汇总：
+            
+            ### 🖥️ Server (Linux)
+            - `AdaptixServer-${{ env.VERSION }}.tar.gz`
+            - `AdaptixServer-${{ env.VERSION }}.zip`
+            
+            ### 🐧 Client (Linux)
+            - `AdaptixClient-linux-${{ env.VERSION }}.tar.gz`
+            - `AdaptixClient-linux-${{ env.VERSION }}.zip`
+            
+            ### 💻 Client (Windows)
+            - `AdaptixClient-windows-${{ env.VERSION }}.zip`
+            
+            ### 🍎 Client (macOS)
+            - `AdaptixClient-macOS-${{ env.VERSION }}.zip`
+            
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,6 +11,7 @@ import (
 
 type Profile struct {
 	Type        uint     `msgpack:"type"`
+	Protocol    string   `msgpack:"protocol"`
 	Addresses   []string `msgpack:"addresses"`
 	BannerSize  int      `msgpack:"banner_size"`
 	ConnTimeout int      `msgpack:"conn_timeout"`

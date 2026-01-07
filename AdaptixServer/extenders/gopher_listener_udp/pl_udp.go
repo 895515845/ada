@@ -294,9 +294,8 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 				_, _ = pw.Write(decBuffer)
 			}
 
-			// 尝试读取响应数据并发送回去
+			// 尝试读取响应数据并发送回去（移除了 SetDeadline 调用）
 			readBuffer := make([]byte, 4096)
-			_ = pr.(*io.PipeReader).SetDeadline(time.Now().Add(100 * time.Millisecond))
 			n, err := pr.Read(readBuffer)
 			if err == nil && n > 0 {
 				blockEnc, _ := aes.NewCipher(tunPack.Key)
@@ -358,9 +357,8 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 				_, _ = pw.Write(decBuffer)
 			}
 
-			// 尝试读取响应数据并发送回去
+			// 尝试读取响应数据并发送回去（移除了 SetDeadline 调用）
 			readBuffer := make([]byte, 4096)
-			_ = pr.(*io.PipeReader).SetDeadline(time.Now().Add(100 * time.Millisecond))
 			n, err := pr.Read(readBuffer)
 			if err == nil && n > 0 {
 				blockEnc, _ := aes.NewCipher(termPack.Key)

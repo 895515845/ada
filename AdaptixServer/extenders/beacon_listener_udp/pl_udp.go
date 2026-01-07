@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -348,7 +347,7 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 			defer wg.Done()
 			buf := make([]byte, 65535)
 			for {
-				n, err := udpConn.ReadFrom(buf)
+				n, _, err := udpConn.ReadFrom(buf)
 				if err != nil {
 					break
 				}
@@ -417,7 +416,7 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 			defer wg.Done()
 			buf := make([]byte, 65535)
 			for {
-				n, err := udpConn.ReadFrom(buf)
+				n, _, err := udpConn.ReadFrom(buf)
 				if err != nil {
 					break
 				}

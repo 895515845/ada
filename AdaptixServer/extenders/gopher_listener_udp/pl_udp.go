@@ -149,8 +149,12 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 		initMsg         StartMsg
 	)
 
-	// 保存原始数据引用
-	recvData = data
+	// UDP 数据包格式：[4字节长度前缀] + [加密数据]
+	// 跳过前 4 个字节的长度前缀（agent 使用 SendMsg 添加的）
+	if len(data) < 4 {
+		return
+	}
+	recvData = data[4:]
 
 	encKey, err = hex.DecodeString(handler.Config.EncryptKey)
 	if err != nil {
@@ -207,7 +211,11 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 		}
 
 		if sendData != nil && len(sendData) > 0 {
-			err = handler.sendPacket(addr, sendData)
+			// 添加长度前缀（agent 使用 RecvMsg 接收）
+			msgLen := make([]byte, 4)
+			binary.BigEndian.PutUint32(msgLen, uint32(len(sendData)))
+			message := append(msgLen, sendData...)
+			err = handler.sendPacket(addr, message)
 			if err != nil {
 				return
 			}
@@ -424,6 +432,7 @@ func (handler *UDP) sendPacket(addr *net.UDPAddr, data []byte) error {
 		return errors.New("conn is nil")
 	}
 
+	// 直接发送数据（调用者负责添加长度前缀）
 	_, err := handler.Conn.WriteToUDP(data, addr)
 	return err
 }

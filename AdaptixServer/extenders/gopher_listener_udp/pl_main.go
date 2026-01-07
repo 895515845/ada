@@ -59,7 +59,7 @@ var (
 	ModuleObject    *ModuleExtender
 	ModuleDir       string
 	ListenerDataDir string
-	ListenersObject []any //*SMB
+	ListenersObject []any //*UDP
 )
 
 func InitPlugin(ts any, moduleDir string, listenerDir string) any {
@@ -132,11 +132,5 @@ func (m *ModuleExtender) ListenerGetProfile(name string) ([]byte, error) {
 }
 
 func (m *ModuleExtender) ListenerInteralHandler(name string, data []byte) (string, error) {
-	for _, value := range ListenersObject {
-		id, err, ok := m.HandlerListenerInteralHandler(name, data, value)
-		if ok {
-			return id, err
-		}
-	}
 	return "", errors.New("listener not found")
 }

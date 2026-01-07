@@ -132,8 +132,8 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		BindHost:  listener.Config.HostBind,
 		BindPort:  strconv.Itoa(listener.Config.PortBind),
 		AgentAddr: conf.Callback_addresses,
+		Protocol:  "udp",
 		Status:    "Listen",
-		AgentType: "gopher",
 	}
 
 	if !listener.Active {
@@ -179,17 +179,14 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 		conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
 
 		listener.Config.Callback_addresses = conf.Callback_addresses
-
-		listener.Config.TcpBanner = conf.TcpBanner
-		listener.Config.ErrorAnswer = conf.ErrorAnswer
 		listener.Config.Timeout = conf.Timeout
 
 		listenerData = adaptix.ListenerData{
 			BindHost:  listener.Config.HostBind,
 			BindPort:  strconv.Itoa(listener.Config.PortBind),
 			AgentAddr: listener.Config.Callback_addresses,
+			Protocol:  "udp",
 			Status:    "Listen",
-			AgentType: "gopher",
 		}
 		if !listener.Active {
 			listenerData.Status = "Closed"
@@ -246,8 +243,4 @@ func (m *ModuleExtender) HandlerListenerGetProfile(name string, listenerObject a
 	/// END CODE
 
 	return object.Bytes(), ok
-}
-
-func (m *ModuleExtender) HandlerListenerInteralHandler(name string, data []byte, listenerObject any) (string, error, bool) {
-	return "", errors.New("not implemented"), false
 }

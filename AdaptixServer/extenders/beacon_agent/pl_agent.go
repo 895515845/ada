@@ -41,7 +41,6 @@ var (
 	ObjectDir_http = "objects_http"
 	ObjectDir_smb  = "objects_smb"
 	ObjectDir_tcp  = "objects_tcp"
-	ObjectDir_udp  = "objects_udp"
 	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "Boffer", "Commander", "Crypt", "Downloader", "Encoders", "JobsController", "MainAgent", "MemorySaver", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
 	CFlags         = "-c -fno-builtin -fno-unwind-tables -fno-strict-aliasing -fno-ident -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -fpermissive -w -masm=intel -fPIC"
 	LFlags         = "-Os -s -Wl,-s,--gc-sections -static-libgcc -mwindows"
@@ -172,18 +171,6 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		params = append(params, int(lWatermark))
 		params = append(params, kill_date)
 
-	case "bind_udp":
-		prepend, _ := listenerMap["prepend_data"].(string)
-		port, _ := listenerMap["port_bind"].(float64)
-
-		lWatermark, _ := strconv.ParseInt(listenerWM, 16, 64)
-
-		params = append(params, int(agentWatermark))
-		params = append(params, prepend)
-		params = append(params, int(port))
-		params = append(params, int(lWatermark))
-		params = append(params, kill_date)
-
 	default:
 		return nil, errors.New("protocol unknown")
 	}
@@ -251,9 +238,6 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 	} else if protocol == "bind_tcp" {
 		ObjectDir = ObjectDir_tcp
 		ConnectorFile = "ConnectorTCP"
-	} else if protocol == "bind_udp" {
-		ObjectDir = ObjectDir_udp
-		ConnectorFile = "ConnectorUDP"
 	} else {
 		return nil, "", errors.New("protocol unknown")
 	}

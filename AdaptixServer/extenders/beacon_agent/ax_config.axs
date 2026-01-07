@@ -270,7 +270,7 @@ function RegisterCommands(listenerType)
 
         return { commands_windows: commands_external }
     }
-    else if (listenerType == "BeaconSMB" || listenerType == "BeaconTCP" || listenerType == "BeaconUDP") {
+    else if (listenerType == "BeaconSMB" || listenerType == "BeaconTCP") {
         let commands_internal = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd,
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact] );

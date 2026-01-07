@@ -26,11 +26,6 @@ typedef struct {
 	BYTE* prepend;
 	WORD  port;
 } ProfileTCP;
-
-typedef struct {
-	BYTE* prepend;
-	WORD  port;
-} ProfileUDP;
 #endif
 
 
@@ -60,9 +55,6 @@ public:
 
 #elif defined(BEACON_TCP)
 	ProfileTCP profile;
-
-#elif defined(BEACON_UDP)
-	ProfileUDP profile;
 
 #endif
 

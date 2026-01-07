@@ -14,65 +14,6 @@ import (
 	"github.com/Adaptix-Framework/axc2"
 )
 
-// processEscapes 安全处理转义序列，避免 strconv.Unquote 失败
-func processEscapes(s string) string {
-	var buf bytes.Buffer
-	for i := 0; i < len(s); {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case 'a':
-				buf.WriteByte('\a')
-				i += 2
-			case 'b':
-				buf.WriteByte('\b')
-				i += 2
-			case 'f':
-				buf.WriteByte('\f')
-				i += 2
-			case 'n':
-				buf.WriteByte('\n')
-				i += 2
-			case 'r':
-				buf.WriteByte('\r')
-				i += 2
-			case 't':
-				buf.WriteByte('\t')
-				i += 2
-			case 'v':
-				buf.WriteByte('\v')
-				i += 2
-			case '\\':
-				buf.WriteByte('\\')
-				i += 2
-			case '"':
-				buf.WriteByte('"')
-				i += 2
-			case 'x':
-				// 处理十六进制转义 \xXX
-				if i+3 < len(s) {
-					hexStr := s[i+2 : i+4]
-					if v, err := strconv.ParseUint(hexStr, 16, 8); err == nil {
-						buf.WriteByte(byte(v))
-						i += 4
-						continue
-					}
-				}
-				// 如果是无效的十六进制转义，直接写入原始字符
-				buf.WriteByte('\\')
-				i += 1
-			default:
-				// 其他未知转义，直接写入原始字符
-				buf.WriteByte('\\')
-				i += 1
-			}
-		} else {
-			buf.WriteByte(s[i])
-			i += 1
-		}
-	}
-	return buf.String()
-}
-
 func (m *ModuleExtender) HandlerListenerValid(data string) error {
 
 	/// START CODE HERE
@@ -121,8 +62,10 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 			return listenerData, customdData, listener, err
 		}
 
-		// 安全处理转义序列，避免 strconv.Unquote 失败
-		conf.Prepend = processEscapes(conf.Prepend)
+		conf.Prepend, err = strconv.Unquote(`"` + conf.Prepend + `"`)
+		if err != nil {
+			return listenerData, customdData, listener, err
+		}
 
 		conf.Protocol = "bind_tcp"
 	} else {
@@ -136,11 +79,6 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		Name:   name,
 		Config: conf,
 		Active: true,
-	}
-
-	err = listener.Start()
-	if err != nil {
-		return listenerData, customdData, listener, err
 	}
 
 	listenerData = adaptix.ListenerData{
@@ -216,7 +154,6 @@ func (m *ModuleExtender) HandlerListenerStop(name string, listenerObject any) (b
 
 	listener := listenerObject.(*TCP)
 	if listener.Name == name {
-		err = listener.Stop()
 		ok = true
 	}
 

@@ -41,9 +41,9 @@ class ConnectorUDP
 
 	UDPFUNC* functions = NULL;
 
-	SOCKET SrvSocket;
-	struct sockaddr_in ClientAddr;
-	int ClientAddrLen;
+	SOCKET ClientSocket;
+	struct sockaddr_in ServerAddr;
+	int ServerAddrLen;
 
 public:
 	ConnectorUDP();

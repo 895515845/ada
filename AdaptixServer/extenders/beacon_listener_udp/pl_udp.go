@@ -318,11 +318,17 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 			goto ERR
 		}
 
-		blockEnc, _ := aes.NewCipher(tunPack.Key)
+		blockEnc, err := aes.NewCipher(tunPack.Key)
+		if err != nil {
+			goto ERR
+		}
 		encStream := cipher.NewCTR(blockEnc, tunPack.Iv)
 		encWriter := &cipher.StreamWriter{S: encStream, W: udpConn}
 
-		blockDec, _ := aes.NewCipher(tunPack.Key)
+		blockDec, err := aes.NewCipher(tunPack.Key)
+		if err != nil {
+			goto ERR
+		}
 		decStream := cipher.NewCTR(blockDec, tunPack.Iv)
 		decWriter := &cipher.StreamWriter{S: decStream, W: pw}
 
@@ -330,6 +336,7 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 		closeAll := func() {
 			closeOnce.Do(func() {
 				_ = pr.Close()
+				_ = pw.Close()
 			})
 		}
 
@@ -387,11 +394,17 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 			goto ERR
 		}
 
-		blockEnc, _ := aes.NewCipher(termPack.Key)
+		blockEnc, err := aes.NewCipher(termPack.Key)
+		if err != nil {
+			goto ERR
+		}
 		encStream := cipher.NewCTR(blockEnc, termPack.Iv)
 		encWriter := &cipher.StreamWriter{S: encStream, W: udpConn}
 
-		blockDec, _ := aes.NewCipher(termPack.Key)
+		blockDec, err := aes.NewCipher(termPack.Key)
+		if err != nil {
+			goto ERR
+		}
 		decStream := cipher.NewCTR(blockDec, termPack.Iv)
 		decWriter := &cipher.StreamWriter{S: decStream, W: pw}
 
@@ -399,6 +412,7 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 		closeAll := func() {
 			closeOnce.Do(func() {
 				_ = pr.Close()
+				_ = pw.Close()
 			})
 		}
 
@@ -430,19 +444,26 @@ func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Te
 		_ = ts.TsAgentTerminalCloseChannel(terminalId, "killed")
 	}
 
+	connection.handleCancel()
 	return
 
 ERR:
 	if len(handler.Config.ErrorAnswer) > 0 {
 		_ = sendMsg(udpConn, remoteAddr, []byte(handler.Config.ErrorAnswer))
 	}
+	connection.handleCancel()
 }
 
 func recvMsg(conn *net.UDPConn, remoteAddr *net.UDPAddr) ([]byte, error) {
 	buf := make([]byte, 65535)
-	n, _, err := conn.ReadFromUDP(buf)
+	n, addr, err := conn.ReadFrom(buf)
 	if err != nil {
 		return nil, err
+	}
+
+	udpAddr, ok := addr.(*net.UDPAddr)
+	if !ok || udpAddr.String() != remoteAddr.String() {
+		return nil, fmt.Errorf("invalid remote address")
 	}
 
 	data := buf[:n]
@@ -450,7 +471,7 @@ func recvMsg(conn *net.UDPConn, remoteAddr *net.UDPAddr) ([]byte, error) {
 	bufLen := data[:4]
 	msgLen := binary.BigEndian.Uint32(bufLen)
 
-	if uint32(len(data)-4) < msgLen {
+	if len(data) < 4+int(msgLen) {
 		return nil, fmt.Errorf("incomplete message")
 	}
 
@@ -465,7 +486,7 @@ func sendMsg(conn *net.UDPConn, remoteAddr *net.UDPAddr, data []byte) error {
 	msgLen := make([]byte, 4)
 	binary.BigEndian.PutUint32(msgLen, uint32(len(data)))
 	message := append(msgLen, data...)
-	_, err := conn.WriteToUDP(message, remoteAddr)
+	_, err := conn.WriteTo(message, remoteAddr)
 	return err
 }
 

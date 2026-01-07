@@ -83,9 +83,9 @@ x64: $(HTTP_OBJECTS_X64) $(SMB_OBJECTS_X64) $(TCP_OBJECTS_X64) $(UDP_OBJECTS_X64
 	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(TCP_DIST_DIR)/main_shellcode.x64.o
 	@rm $(TCP_DIST_DIR)/ConnectorHTTP.x64.o $(TCP_DIST_DIR)/ConnectorSMB.x64.o
 	@ # udp
-	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SVC -o $(UDP_DIST_DIR)/main_service.x64.o
-	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_SMB -D BUILD_DLL -o $(UDP_DIST_DIR)/main_dll.x64.o
-	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(UDP_DIST_DIR)/main_shellcode.x64.o
+	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_UDP -D BUILD_SVC -o $(UDP_DIST_DIR)/main_service.x64.o
+	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_UDP -D BUILD_DLL -o $(UDP_DIST_DIR)/main_dll.x64.o
+	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_UDP -D BUILD_SHELLCODE -o $(UDP_DIST_DIR)/main_shellcode.x64.o
 	@rm $(UDP_DIST_DIR)/ConnectorHTTP.x64.o $(UDP_DIST_DIR)/ConnectorSMB.x64.o
 
 x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(UDP_OBJECTS_X86)
@@ -105,9 +105,9 @@ x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(UDP_OBJECTS_X86
 	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(TCP_DIST_DIR)/main_shellcode.x86.o
 	@rm $(TCP_DIST_DIR)/ConnectorHTTP.x86.o $(TCP_DIST_DIR)/ConnectorSMB.x86.o
 	@ # udp
-	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SVC -o $(UDP_DIST_DIR)/main_service.x86.o
-	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_SMB -D BUILD_DLL -o $(UDP_DIST_DIR)/main_dll.x86.o
-	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(UDP_DIST_DIR)/main_shellcode.x86.o
+	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_UDP -D BUILD_SVC -o $(UDP_DIST_DIR)/main_service.x86.o
+	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_UDP -D BUILD_DLL -o $(UDP_DIST_DIR)/main_dll.x86.o
+	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_UDP -D BUILD_SHELLCODE -o $(UDP_DIST_DIR)/main_shellcode.x86.o
 	@rm $(UDP_DIST_DIR)/ConnectorHTTP.x86.o $(UDP_DIST_DIR)/ConnectorSMB.x86.o
 
 
@@ -137,7 +137,7 @@ $(TCP_DIST_DIR)/%.x86.o: beacon/%.cpp
 
 
 $(UDP_DIST_DIR)/%.x64.o: beacon/%.cpp
-	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) -D BEACON_TCP -c $< -o $@
+	@x86_64-w64-mingw32-g++ -c $(COMMON_FLAGS) -D BEACON_UDP -c $< -o $@
 
 $(UDP_DIST_DIR)/%.x86.o: beacon/%.cpp
-	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) -D BEACON_TCP -c $< -o $@
+	@i686-w64-mingw32-g++ -c $(COMMON_FLAGS) -D BEACON_UDP -c $< -o $@

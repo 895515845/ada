@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+
+	"github.com/Adaptix-Framework/axc2"
 )
 
 // processEscapes 安全处理转义序列，避免 strconv.Unquote 失败

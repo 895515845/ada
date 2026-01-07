@@ -133,6 +133,7 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		BindPort:  strconv.Itoa(listener.Config.PortBind),
 		AgentAddr: conf.Callback_addresses,
 		Status:    "Listen",
+		AgentType: "gopher",
 	}
 
 	if !listener.Active {
@@ -188,6 +189,7 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 			BindPort:  strconv.Itoa(listener.Config.PortBind),
 			AgentAddr: listener.Config.Callback_addresses,
 			Status:    "Listen",
+			AgentType: "gopher",
 		}
 		if !listener.Active {
 			listenerData.Status = "Closed"

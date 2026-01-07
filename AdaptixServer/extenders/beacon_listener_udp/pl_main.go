@@ -100,14 +100,3 @@ func (m *ModuleExtender) ListenerInteralHandler(name string, data []byte) (strin
 	}
 	return "", errors.New("listener not found")
 }
-
-func GetInfo() adaptix.InfoExtender {
-	return adaptix.InfoExtender{
-		Name:             "UDP",
-		Author:           "Adaptix Team",
-		Version:          "1.0",
-		Category:         adaptix.Listener,
-		TargetVersion:    "1.0",
-		TargetVersionMax: "1.0",
-	}
-}

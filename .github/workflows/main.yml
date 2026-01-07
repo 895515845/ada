@@ -63,7 +63,6 @@ jobs:
           mkdir -p release-package-server
           cp -r dist/* release-package-server/
           
-          tar -czf AdaptixServer-${VERSION}.tar.gz -C release-package-server .
           zip -r AdaptixServer-${VERSION}.zip release-package-server/*
 
       - name: Upload Server Artifacts
@@ -71,7 +70,6 @@ jobs:
         with:
           name: artifact-server
           path: |
-            AdaptixC2/*.tar.gz
             AdaptixC2/*.zip
 
   # ========================================================

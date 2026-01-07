@@ -2,76 +2,16 @@ package main
 
 import (
 	"bytes"
-	"crypto/rc4"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/Adaptix-Framework/axc2"
 )
-
-// processEscapes 安全处理转义序列，避免 strconv.Unquote 失败
-func processEscapes(s string) string {
-	var buf bytes.Buffer
-	for i := 0; i < len(s); {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case 'a':
-				buf.WriteByte('\a')
-				i += 2
-			case 'b':
-				buf.WriteByte('\b')
-				i += 2
-			case 'f':
-				buf.WriteByte('\f')
-				i += 2
-			case 'n':
-				buf.WriteByte('\n')
-				i += 2
-			case 'r':
-				buf.WriteByte('\r')
-				i += 2
-			case 't':
-				buf.WriteByte('\t')
-				i += 2
-			case 'v':
-				buf.WriteByte('\v')
-				i += 2
-			case '\\':
-				buf.WriteByte('\\')
-				i += 2
-			case '"':
-				buf.WriteByte('"')
-				i += 2
-			case 'x':
-				// 处理十六进制转义 \xXX
-				if i+3 < len(s) {
-					hexStr := s[i+2 : i+4]
-					if v, err := strconv.ParseUint(hexStr, 16, 8); err == nil {
-						buf.WriteByte(byte(v))
-						i += 4
-						continue
-					}
-				}
-				// 如果是无效的十六进制转义，直接写入原始字符
-				buf.WriteByte('\\')
-				i += 1
-			default:
-				// 其他未知转义，直接写入原始字符
-				buf.WriteByte('\\')
-				i += 1
-			}
-		} else {
-			buf.WriteByte(s[i])
-			i += 1
-		}
-	}
-	return buf.String()
-}
 
 func (m *ModuleExtender) HandlerListenerValid(data string) error {
 
@@ -87,8 +27,50 @@ func (m *ModuleExtender) HandlerListenerValid(data string) error {
 		return err
 	}
 
-	if conf.Port < 1 || conf.Port > 65535 {
-		return errors.New("Port must be in the range 1-65535")
+	if conf.HostBind == "" {
+		return errors.New("HostBind is required")
+	}
+
+	if conf.PortBind < 1 || conf.PortBind > 65535 {
+		return errors.New("PortBind must be in the range 1-65535")
+	}
+
+	if conf.Callback_addresses == "" {
+		return errors.New("callback_servers is required")
+	}
+	lines := strings.Split(strings.TrimSpace(conf.Callback_addresses), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		host, portStr, err := net.SplitHostPort(line)
+		if err != nil {
+			return fmt.Errorf("Invalid address (cannot split host:port): %s\n", line)
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("Invalid port: %s\n", line)
+		}
+
+		ip := net.ParseIP(host)
+		if ip == nil {
+			if len(host) == 0 || len(host) > 253 {
+				return fmt.Errorf("Invalid host: %s\n", line)
+			}
+			parts := strings.Split(host, ".")
+			for _, part := range parts {
+				if len(part) == 0 || len(part) > 63 {
+					return fmt.Errorf("Invalid host: %s\n", line)
+				}
+			}
+		}
+	}
+
+	if conf.Timeout < 1 {
+		return errors.New("Timeout must be greater than 0")
 	}
 
 	match, _ := regexp.MatchString("^[0-9a-f]{32}$", conf.EncryptKey)
@@ -121,10 +103,12 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 			return listenerData, customdData, listener, err
 		}
 
-		// 安全处理转义序列，避免 strconv.Unquote 失败
-		conf.Prepend = processEscapes(conf.Prepend)
+		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, " ", "")
+		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, "\n", ", ")
+		conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
 
-		conf.Protocol = "bind_udp"
+		conf.Protocol = "udp"
+
 	} else {
 		err = json.Unmarshal(listenerCustomData, &conf)
 		if err != nil {
@@ -133,21 +117,26 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 	}
 
 	listener = &UDP{
-		Name:   name,
-		Config: conf,
-		Active: true,
+		Name:          name,
+		Config:        conf,
+		AgentConnects: NewMap(),
+		JobConnects:   NewMap(),
 	}
 
-	err = listener.Start()
+	err = listener.Start(m.ts)
 	if err != nil {
 		return listenerData, customdData, listener, err
 	}
 
 	listenerData = adaptix.ListenerData{
-		BindHost:  "",
-		BindPort:  "",
-		AgentAddr: fmt.Sprintf("0.0.0.0:%d", listener.Config.Port),
+		BindHost:  listener.Config.HostBind,
+		BindPort:  strconv.Itoa(listener.Config.PortBind),
+		AgentAddr: conf.Callback_addresses,
 		Status:    "Listen",
+	}
+
+	if !listener.Active {
+		listenerData.Status = "Closed"
 	}
 
 	var buffer bytes.Buffer
@@ -184,11 +173,24 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 			return listenerData, customdData, false
 		}
 
+		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, " ", "")
+		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, "\n", ", ")
+		conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
+
+		listener.Config.Callback_addresses = conf.Callback_addresses
+
+		listener.Config.TcpBanner = conf.TcpBanner
+		listener.Config.ErrorAnswer = conf.ErrorAnswer
+		listener.Config.Timeout = conf.Timeout
+
 		listenerData = adaptix.ListenerData{
-			BindHost:  "",
-			BindPort:  "",
-			AgentAddr: fmt.Sprintf("0.0.0.0:%d", listener.Config.Port),
+			BindHost:  listener.Config.HostBind,
+			BindPort:  strconv.Itoa(listener.Config.PortBind),
+			AgentAddr: listener.Config.Callback_addresses,
 			Status:    "Listen",
+		}
+		if !listener.Active {
+			listenerData.Status = "Closed"
 		}
 
 		var buffer bytes.Buffer
@@ -245,47 +247,5 @@ func (m *ModuleExtender) HandlerListenerGetProfile(name string, listenerObject a
 }
 
 func (m *ModuleExtender) HandlerListenerInteralHandler(name string, data []byte, listenerObject any) (string, error, bool) {
-	var (
-		agentType string
-		agentId   string
-		agentInfo []byte
-		err       error = nil
-		ok        bool  = false
-	)
-
-	/// START CODE HERE
-
-	listener := listenerObject.(*UDP)
-	if listener.Name == name {
-
-		encKey, err := hex.DecodeString(listener.Config.EncryptKey)
-		if err != nil {
-			return "", err, true
-		}
-		rc4crypt, errcrypt := rc4.NewCipher(encKey)
-		if errcrypt != nil {
-			return "", errcrypt, true
-		}
-
-		agentInfo = make([]byte, len(data))
-		rc4crypt.XORKeyStream(agentInfo, data)
-
-		agentType = fmt.Sprintf("%08x", uint(binary.BigEndian.Uint32(agentInfo[:4])))
-		agentInfo = agentInfo[4:]
-		agentId = fmt.Sprintf("%08x", uint(binary.BigEndian.Uint32(agentInfo[:4])))
-		agentInfo = agentInfo[4:]
-
-		if !ModuleObject.ts.TsAgentIsExists(agentId) {
-			_, err = ModuleObject.ts.TsAgentCreate(agentType, agentId, agentInfo, listener.Name, "", false)
-			if err != nil {
-				return agentId, err, false
-			}
-		}
-
-		ok = true
-	}
-
-	/// END CODE
-
-	return agentId, err, ok
+	return "", errors.New("not implemented"), false
 }

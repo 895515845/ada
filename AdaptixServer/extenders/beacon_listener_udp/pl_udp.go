@@ -130,7 +130,16 @@ func (handler *UDP) Start(ts Teamserver) error {
 	}()
 
 	handler.Active = true
+	time.Sleep(500 * time.Millisecond)
 	return err
+}
+
+func (handler *UDP) Stop() error {
+	if handler.Listener != nil {
+		handler.Active = false
+		return handler.Listener.Close()
+	}
+	return nil
 }
 
 func (handler *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr, ts Teamserver) {
@@ -428,35 +437,6 @@ ERR:
 	if len(handler.Config.ErrorAnswer) > 0 {
 		_ = sendMsg(udpConn, remoteAddr, []byte(handler.Config.ErrorAnswer))
 	}
-}
-
-func (handler *UDP) Stop() error {
-	var (
-		err          error = nil
-		listenerPath       = ListenerDataDir + "/" + handler.Name
-	)
-
-	if handler.Listener != nil {
-		_ = handler.Listener.Close()
-	}
-
-	handler.AgentConnects.ForEach(func(key string, valueConn interface{}) bool {
-		connection, _ := valueConn.(Connection)
-		if connection.handleCancel != nil {
-			connection.handleCancel()
-		}
-		return true
-	})
-
-	_, err = os.Stat(listenerPath)
-	if err == nil {
-		err = os.RemoveAll(listenerPath)
-		if err != nil {
-			return fmt.Errorf("failed to remove %s folder: %s", listenerPath, err.Error())
-		}
-	}
-
-	return nil
 }
 
 func recvMsg(conn *net.UDPConn, remoteAddr *net.UDPAddr) ([]byte, error) {

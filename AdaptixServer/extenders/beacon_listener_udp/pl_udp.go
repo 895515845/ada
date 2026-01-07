@@ -6,9 +6,27 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"sync"
-	"time"
+	"sync" // Used for Map
 )
+
+// Helper Map wrapper to match existing API usage
+type Map struct {
+	sync.Map
+}
+
+func (m *Map) Put(key string, value interface{}) {
+	m.Store(key, value)
+}
+
+func (m *Map) Delete(key string) {
+	m.LoadAndDelete(key)
+}
+
+func (m *Map) ForEach(f func(key string, valueConn interface{}) bool) {
+	m.Range(func(k, v interface{}) bool {
+		return f(k.(string), v)
+	})
+}
 
 type UDPConfig struct {
 	Port       int    `json:"port_bind"`
@@ -49,7 +67,13 @@ func (handler *UDP) Start() error {
 			if err != nil {
 				return
 			}
-			go handler.handlePacket(buf[:n], addr)
+            
+            // Critical fix: Copy data before passing to goroutine
+            // Otherwise 'buf' is overwritten by next read while goroutine is processing
+            packetData := make([]byte, n)
+            copy(packetData, buf[:n])
+            
+			go handler.handlePacket(packetData, addr)
 		}
 	}()
 	handler.Active = true
@@ -75,28 +99,65 @@ func (handler *UDP) Stop() error {
 
 func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr) {
 	var (
-		agentType  string
-		agentId    string
-		agentInfo  []byte
-		err        error
+		agentType string
+		agentId   string
+		err       error
 	)
 
-	remoteAddr := addr.String()
+	// Packet structure expected: [Encrypted Header (8 bytes: Type+ID)] + [Encrypted Payload (Data)]
+	if len(data) < 8 {
+		return
+	}
 
-	agentType, agentId, agentInfo, err = parseAgentData(data, handler.Config.EncryptKey)
+	remoteAddr := addr.String()
+	header := data[:8]
+	payload := data[8:] // Encrypted payload
+
+	// 1. Parse Header to get ID (and Type)
+	// parseAgentData decrypts the buffer and reads Type/ID. 
+	// If we pass just header, it reads Type/ID and returns empty Info.
+	agentType, agentId, _, err = parseAgentData(header, handler.Config.EncryptKey)
 	if err != nil {
 		return
 	}
 
+	// 2. Routing Logic
 	if !ModuleObject.ts.TsAgentIsExists(agentId) {
+		// New Agent (Beat Packet)
+		// Beat Packet Payload is "Encrypted Info".
+		// parseAgentData(data) would return Type, ID, and Decrypted Info.
+		// So we re-parse full data to get the Info for Creation.
+		_, _, agentInfo, err := parseAgentData(data, handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
+
 		_, err = ModuleObject.ts.TsAgentCreate(agentType, agentId, agentInfo, handler.Name, remoteAddr, false)
 		if err != nil {
 			return
 		}
+	} else {
+		// Existing Agent
+		emptyMark := ""
+		_ = ModuleObject.ts.TsAgentUpdateDataPartial(agentId, struct {
+			Mark *string `json:"mark"`
+		}{Mark: &emptyMark})
 	}
 
 	handler.AgentConnects.Put(agentId, addr)
 
+	// 3. Process Payload (if any)
+	// Payload is Encrypted(Data). ProcessData expects this format.
+	if len(payload) > 0 {
+		_ = ModuleObject.ts.TsAgentSetTick(agentId)
+		// ProcessData expects Encrypted Data. 
+		// Since we constructed the packet as Encrypt(Header) + Encrypt(Data),
+		// 'payload' IS Encrypt(Data). Perfect.
+		_ = ModuleObject.ts.TsAgentProcessData(agentId, payload)
+	}
+
+	// 4. Send Tasks
+	// Use TsAgentGetHostedAll to support Tunnels etc.
 	sendData, err := ModuleObject.ts.TsAgentGetHostedAll(agentId, 0x1900000)
 	if err != nil {
 		handler.AgentConnects.Delete(agentId)
@@ -109,27 +170,15 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr) {
 			handler.AgentConnects.Delete(agentId)
 			return
 		}
-
-		_ = ModuleObject.ts.TsAgentSetTick(agentId)
-		_ = ModuleObject.ts.TsAgentProcessData(agentId, data)
 	}
 }
 
 func writeData(conn *net.UDPConn, data []byte, addr *net.UDPAddr) error {
-	dataLen := len(data)
-	bufLen := []byte{
-		byte(dataLen >> 24),
-		byte(dataLen >> 16),
-		byte(dataLen >> 8),
-		byte(dataLen),
-	}
-
-	_, err := conn.WriteToUDP(bufLen, addr)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.WriteToUDP(data, addr)
+	// Directly send data. No length header packet.
+	// UDP packet size limit is handled by the network stack/MTU, 
+	// we assume data < 64KB. If larger, we'd need application-level fragmentation 
+	// but for now we just remove the splitting to fix connectivity.
+	_, err := conn.WriteToUDP(data, addr)
 	return err
 }
 

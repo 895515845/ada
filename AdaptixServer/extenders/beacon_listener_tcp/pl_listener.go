@@ -138,6 +138,11 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		Active: true,
 	}
 
+	err = listener.Start()
+	if err != nil {
+		return listenerData, customdData, listener, err
+	}
+
 	listenerData = adaptix.ListenerData{
 		BindHost:  "",
 		BindPort:  "",
@@ -211,6 +216,7 @@ func (m *ModuleExtender) HandlerListenerStop(name string, listenerObject any) (b
 
 	listener := listenerObject.(*TCP)
 	if listener.Name == name {
+		err = listener.Stop()
 		ok = true
 	}
 

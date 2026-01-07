@@ -21,6 +21,25 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+// Helper Map wrapper to match existing API usage
+type Map struct {
+	sync.Map
+}
+
+func (m *Map) Put(key string, value interface{}) {
+	m.Store(key, value)
+}
+
+func (m *Map) Delete(key string) {
+	m.LoadAndDelete(key)
+}
+
+func (m *Map) ForEach(f func(key string, valueConn interface{}) bool) {
+	m.Range(func(k, v interface{}) bool {
+		return f(k.(string), v)
+	})
+}
+
 type TCPConfig struct {
 	HostBind           string `json:"host_bind"`
 	PortBind           int    `json:"port_bind"`

@@ -136,7 +136,18 @@ BYTE* Agent::BuildBeat(ULONG* size)
 	PBYTE pdata = packer->data();
 	MemFreeLocal((LPVOID*)&pdata, packer->datasize());
 
-#elif defined(BEACON_TCP) 
+#elif defined(BEACON_TCP)
+
+	ULONG beat_size = packer->datasize() + 4;
+	PBYTE beat      = (PBYTE)MemAllocLocal(beat_size);
+
+	memcpy(beat, &(this->config->listener_type), 4);
+	memcpy(beat + 4, packer->data(), packer->datasize());
+
+	PBYTE pdata = packer->data();
+	MemFreeLocal((LPVOID*)&pdata, packer->datasize());
+
+#elif defined(BEACON_UDP)
 
 	ULONG beat_size = packer->datasize() + 4;
 	PBYTE beat      = (PBYTE)MemAllocLocal(beat_size);

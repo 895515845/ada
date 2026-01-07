@@ -146,12 +146,11 @@ func (handler *UDP) handlePackets(ts Teamserver) {
 
 func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) {
 	var (
-		recvData        []byte
-		decryptedData   []byte
-		sendData        []byte
-		encKey          []byte
-		err             error
-		initMsg         StartMsg
+		recvData      []byte
+		decryptedData []byte
+		encKey        []byte
+		err           error
+		initMsg       StartMsg
 	)
 
 	// UDP 数据包格式：[4字节长度前缀] + [加密数据]
@@ -192,7 +191,6 @@ func (handler *UDP) handlePacket(data []byte, addr *net.UDPAddr, ts Teamserver) 
 
 func (handler *UDP) handleStartMsg(initMsg StartMsg, decryptedData []byte, addr *net.UDPAddr, ts Teamserver) {
 	var sendData []byte
-	var err error
 
 	switch initMsg.Type {
 

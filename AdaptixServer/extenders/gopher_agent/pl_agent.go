@@ -141,6 +141,29 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
+	case "quic":
+
+		servers, _ := listenerMap["callback_addresses"].(string)
+
+		servers = strings.ReplaceAll(servers, " ", "")
+		servers = strings.ReplaceAll(servers, "\n", ",")
+		servers = strings.TrimSuffix(servers, ",")
+		addresses := strings.Split(servers, ",")
+
+		profile := Profile{
+			Type:        uint(agentWatermark),
+			Protocol:    "quic",
+			Addresses:   addresses,
+			BannerSize:  0,
+			ConnTimeout: reconnectTimeout,
+			ConnCount:   generateConfig.ReconnectCount,
+			UseSSL:      false,
+			SslCert:     nil,
+			SslKey:      nil,
+			CaCert:      nil,
+		}
+		profileData, _ = msgpack.Marshal(profile)
+
 	default:
 		return nil, errors.New("protocol unknown")
 	}

@@ -166,9 +166,35 @@ func (handler *QUIC) Start(ts Teamserver) error {
 		Allow0RTT: true,
 	}
 
-	var err error
-	handler.Listener, err = quic.ListenAddr(address, tlsConfig, quicConfig)
+	// 创建UDP连接并设置缓冲区大小
+	udpAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
+		return err
+	}
+
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return err
+	}
+
+	// 设置UDP接收缓冲区大小为7MB（quic-go推荐的大小）
+	err = udpConn.SetReadBuffer(7 * 1024 * 1024)
+	if err != nil {
+		udpConn.Close()
+		return fmt.Errorf("failed to set UDP read buffer: %v", err)
+	}
+
+	// 设置UDP发送缓冲区大小为7MB
+	err = udpConn.SetWriteBuffer(7 * 1024 * 1024)
+	if err != nil {
+		udpConn.Close()
+		return fmt.Errorf("failed to set UDP write buffer: %v", err)
+	}
+
+	// 使用配置好的UDP连接创建QUIC listener
+	handler.Listener, err = quic.Listen(udpConn, tlsConfig, quicConfig)
+	if err != nil {
+		udpConn.Close()
 		return err
 	}
 

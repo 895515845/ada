@@ -59,7 +59,7 @@ var (
 	ModuleObject    *ModuleExtender
 	ModuleDir       string
 	ListenerDataDir string
-	ListenersObject []any //*UDP
+	ListenersObject []any //*QUIC
 )
 
 func InitPlugin(ts any, moduleDir string, listenerDir string) any {

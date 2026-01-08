@@ -331,7 +331,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		agentId := fmt.Sprintf("%08x", initPack.Id)
 		agentType := fmt.Sprintf("%08x", initPack.Type)
-		
+
 		var ExternalIP string
 		if conn, ok := session.(interface{ RemoteAddr() net.Addr }); ok {
 			ExternalIP = conn.RemoteAddr().String()
@@ -359,6 +359,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		handler.AgentConnects.Put(agentId, connection)
 
+		var encKey []byte
 		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
 		if err != nil {
 			return

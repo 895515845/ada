@@ -325,6 +325,23 @@ func (handler *ICMP) handleBeaconData(ts Teamserver, srcIP string, echoID int, e
 	*/
 	decryptedData := fullPayload // 测试阶段直接使用原始数据
 
+	// 首先检查是否是已注册Agent的任务响应
+	// First check if this is a task response from a registered agent
+	agentId := handler.findAgentByIdentifier(header.Identifier)
+	if agentId != "" {
+		// 这是已注册Agent的任务响应，直接处理
+		// This is a task response from a registered agent, process directly
+		_ = ModuleObject.ts.TsAgentProcessData(agentId, decryptedData)
+		_ = ModuleObject.ts.TsAgentSetTick(agentId)
+
+		// 获取新任务并存储 - Get new tasks and store
+		sendData, err := ModuleObject.ts.TsAgentGetHostedTasks(agentId, 0x1900000)
+		if err == nil && sendData != nil && len(sendData) > 0 {
+			handler.BeaconManager.setResponse(header.Identifier, sendData)
+		}
+		return
+	}
+
 	// 解析消息 - Parse message
 	var initMsg StartMsg
 	err := msgpack.Unmarshal(decryptedData, &initMsg)
@@ -345,6 +362,21 @@ func (handler *ICMP) handleBeaconData(ts Teamserver, srcIP string, echoID int, e
 	case TERMINAL_PACK:
 		handler.processTerminalPack(ts, srcIP, echoID, header.Identifier, initMsg.Data)
 	}
+}
+
+// findAgentByIdentifier 根据identifier查找agentId
+// findAgentByIdentifier finds agentId by identifier
+func (handler *ICMP) findAgentByIdentifier(identifier uint32) string {
+	var foundAgentId string
+	handler.AgentConnects.ForEach(func(key string, value interface{}) bool {
+		conn, ok := value.(Connection)
+		if ok && conn.identifier == identifier {
+			foundAgentId = key
+			return false // 停止遍历
+		}
+		return true
+	})
+	return foundAgentId
 }
 
 // processInitPack 处理初始化包

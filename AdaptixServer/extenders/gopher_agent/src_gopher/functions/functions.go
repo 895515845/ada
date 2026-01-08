@@ -13,49 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"github.com/kbinani/screenshot"
-	"github.com/quic-go/quic-go"
 )
-
-// QUICStreamConn 将 QUIC Stream 包装成 net.Conn 接口
-type QUICStreamConn struct {
-	Stream  quic.Stream
-	Session quic.Connection
-}
-
-func (q *QUICStreamConn) Read(b []byte) (n int, err error) {
-	return q.Stream.Read(b)
-}
-
-func (q *QUICStreamConn) Write(b []byte) (n int, err error) {
-	return q.Stream.Write(b)
-}
-
-func (q *QUICStreamConn) Close() error {
-	return q.Stream.Close()
-}
-
-func (q *QUICStreamConn) LocalAddr() net.Addr {
-	return q.Session.LocalAddr()
-}
-
-func (q *QUICStreamConn) RemoteAddr() net.Addr {
-	return q.Session.RemoteAddr()
-}
-
-func (q *QUICStreamConn) SetDeadline(t time.Time) error {
-	return q.Stream.SetDeadline(t)
-}
-
-func (q *QUICStreamConn) SetReadDeadline(t time.Time) error {
-	return q.Stream.SetReadDeadline(t)
-}
-
-func (q *QUICStreamConn) SetWriteDeadline(t time.Time) error {
-	return q.Stream.SetWriteDeadline(t)
-}
 
 /// FS
 
@@ -413,7 +373,6 @@ func ConnRead(conn net.Conn, size int) ([]byte, error) {
 }
 
 func RecvMsg(conn net.Conn) ([]byte, error) {
-	// 对于所有连接类型（TCP/TLS/QUIC），使用统一的处理方式
 	bufLen, err := ConnRead(conn, 4)
 	if err != nil {
 		return nil, err

@@ -153,7 +153,10 @@ func (m *ModuleExtender) AgentPackData(agentData adaptix.AgentData, tasks []adap
 		return nil, err
 	}
 
-	return AgentEncryptData(packedData, agentData.SessionKey)
+	// TODO: 测试阶段暂时禁用加密，功能测试通过后启用
+	// TODO: Encryption disabled for testing, enable after functionality test passes
+	// return AgentEncryptData(packedData, agentData.SessionKey)
+	return packedData, nil
 }
 
 func (m *ModuleExtender) AgentPivotPackData(pivotId string, data []byte) (adaptix.TaskData, error) {
@@ -177,10 +180,15 @@ func (m *ModuleExtender) AgentPivotPackData(pivotId string, data []byte) (adapti
 }
 
 func (m *ModuleExtender) AgentProcessData(agentData adaptix.AgentData, packedData []byte) ([]byte, error) {
+	// TODO: 测试阶段暂时禁用解密，功能测试通过后启用
+	// TODO: Decryption disabled for testing, enable after functionality test passes
+	/*
 	decryptData, err := AgentDecryptData(packedData, agentData.SessionKey)
 	if err != nil {
 		return nil, err
 	}
+	*/
+	decryptData := packedData
 
 	taskData := adaptix.TaskData{
 		Type:        TYPE_TASK,

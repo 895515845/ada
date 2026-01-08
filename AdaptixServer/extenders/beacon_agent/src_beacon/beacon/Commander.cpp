@@ -30,7 +30,7 @@ void Commander::ProcessCommandTasks(BYTE* recv, ULONG recvSize, Packer* outPacke
 		return;
 	}
 
-	while ( inPacker->datasize() < packerSize + 4 )
+	while ( packerSize + 4 > inPacker->datasize())
 	{	
 		ULONG CommandId = inPacker->Unpack32();
 		switch ( CommandId )

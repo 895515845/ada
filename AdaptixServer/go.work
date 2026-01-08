@@ -8,5 +8,5 @@ use (
 	./extenders/beacon_listener_tcp
 	./extenders/gopher_agent
 	./extenders/gopher_listener_tcp
-	./extenders/gopher_listener_udp
+	./extenders/gopher_listener_icmp
 )

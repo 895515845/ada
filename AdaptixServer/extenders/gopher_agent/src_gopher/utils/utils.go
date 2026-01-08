@@ -68,16 +68,17 @@ type TermPack struct {
 /// Agent
 
 type Profile struct {
-	Type        uint     `msgpack:"type"`
-	Protocol    string   `msgpack:"protocol"`
-	Addresses   []string `msgpack:"addresses"`
-	BannerSize  int      `msgpack:"banner_size"`
-	ConnTimeout int      `msgpack:"conn_timeout"`
-	ConnCount   int      `msgpack:"conn_count"`
-	UseSSL      bool     `msgpack:"use_ssl"`
-	SslCert     []byte   `msgpack:"ssl_cert"`
-	SslKey      []byte   `msgpack:"ssl_key"`
-	CaCert      []byte   `msgpack:"ca_cert"`
+	Type            uint     `msgpack:"type"`
+	Protocol        string   `msgpack:"protocol"`
+	Addresses       []string `msgpack:"addresses"`
+	BannerSize      int      `msgpack:"banner_size"`
+	ConnTimeout     int      `msgpack:"conn_timeout"`
+	ConnCount       int      `msgpack:"conn_count"`
+	UseSSL          bool     `msgpack:"use_ssl"`
+	SslCert         []byte   `msgpack:"ssl_cert"`
+	SslKey          []byte   `msgpack:"ssl_key"`
+	CaCert          []byte   `msgpack:"ca_cert"`
+	MaxFragmentSize int      `msgpack:"max_fragment_size"`
 }
 
 type SessionInfo struct {

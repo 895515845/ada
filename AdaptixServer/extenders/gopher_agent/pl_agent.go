@@ -118,7 +118,7 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
-	case "udp":
+	case "icmp":
 
 		servers, _ := listenerMap["callback_addresses"].(string)
 
@@ -127,40 +127,18 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		servers = strings.TrimSuffix(servers, ",")
 		addresses := strings.Split(servers, ",")
 
-		profile := Profile{
-			Type:        uint(agentWatermark),
-			Protocol:    "udp",
-			Addresses:   addresses,
-			BannerSize:  0,
-			ConnTimeout: reconnectTimeout,
-			ConnCount:   generateConfig.ReconnectCount,
-			UseSSL:      false,
-			SslCert:     nil,
-			SslKey:      nil,
-			CaCert:      nil,
+		maxFragmentSize, _ := listenerMap["max_fragment_size"].(float64)
+		if maxFragmentSize == 0 {
+			maxFragmentSize = 65000
 		}
-		profileData, _ = msgpack.Marshal(profile)
-
-	case "quic":
-
-		servers, _ := listenerMap["callback_addresses"].(string)
-
-		servers = strings.ReplaceAll(servers, " ", "")
-		servers = strings.ReplaceAll(servers, "\n", ",")
-		servers = strings.TrimSuffix(servers, ",")
-		addresses := strings.Split(servers, ",")
 
 		profile := Profile{
-			Type:        uint(agentWatermark),
-			Protocol:    "quic",
-			Addresses:   addresses,
-			BannerSize:  0,
-			ConnTimeout: reconnectTimeout,
-			ConnCount:   generateConfig.ReconnectCount,
-			UseSSL:      false,
-			SslCert:     nil,
-			SslKey:      nil,
-			CaCert:      nil,
+			Type:            uint(agentWatermark),
+			Protocol:        "icmp",
+			Addresses:       addresses,
+			ConnTimeout:     reconnectTimeout,
+			ConnCount:       generateConfig.ReconnectCount,
+			MaxFragmentSize: int(maxFragmentSize),
 		}
 		profileData, _ = msgpack.Marshal(profile)
 

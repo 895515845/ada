@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -213,10 +214,10 @@ func (handler *QUIC) handleSession(session any, ts Teamserver) {
 	}()
 
 	for {
-		var stream quic.Stream
+		var stream *quic.Stream
 		var err error
 		
-		if conn, ok := session.(interface{ AcceptStream(context.Context) (quic.Stream, error) }); ok {
+		if conn, ok := session.(interface{ AcceptStream(context.Context) (*quic.Stream, error) }); ok {
 			stream, err = conn.AcceptStream(context.Background())
 		} else {
 			return
@@ -229,7 +230,7 @@ func (handler *QUIC) handleSession(session any, ts Teamserver) {
 	}
 }
 
-func (handler *QUIC) handleStream(stream quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserver) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("Recovered from panic in handleStream: %v\n", r)
@@ -290,7 +291,7 @@ func (handler *QUIC) handleStream(stream quic.Stream, session any, ts Teamserver
 	}
 }
 
-func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
 	var sendData []byte
 
 	switch initMsg.Type {
@@ -488,7 +489,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 	}
 }
 
-func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
 	var agentId string
 	var found bool
 
@@ -576,7 +577,7 @@ func (handler *QUIC) Stop() error {
 	return nil
 }
 
-func (handler *QUIC) sendPacket(stream quic.Stream, data []byte) error {
+func (handler *QUIC) sendPacket(stream *quic.Stream, data []byte) error {
 	if stream == nil {
 		return errors.New("stream is nil")
 	}

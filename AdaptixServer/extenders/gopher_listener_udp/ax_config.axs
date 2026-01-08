@@ -1,4 +1,4 @@
-/// Gopher UDP listener
+/// Gopher QUIC listener
 
 function ListenerUI(mode_create)
 {

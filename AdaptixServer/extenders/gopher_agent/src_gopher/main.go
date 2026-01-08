@@ -90,7 +90,12 @@ func main() {
 	}
 
 	sessionInfo, sessionKey := CreateInfo()
-	utils.SKey = sessionKey
+	// UDP协议使用配置密钥，TCP协议使用会话密钥
+	if profile.Protocol == "udp" {
+		utils.SKey = encKey
+	} else {
+		utils.SKey = sessionKey
+	}
 
 	r := make([]byte, 4)
 	_, _ = rand.Read(r)
@@ -172,6 +177,14 @@ func main() {
 			sendData   []byte
 		)
 
+		// 根据协议选择加密密钥
+		var cryptKey []byte
+		if _, ok := conn.(*net.UDPConn); ok {
+			cryptKey = encKey // UDP使用配置文件密钥（与Server端一致）
+		} else {
+			cryptKey = sessionKey // TCP继续使用会话密钥
+		}
+
 		for ACTIVE {
 			recvData, err = functions.RecvMsg(conn)
 			if err != nil {
@@ -179,7 +192,7 @@ func main() {
 			}
 
 			outMessage = utils.Message{Type: 0}
-			recvData, err = utils.DecryptData(recvData, sessionKey)
+			recvData, err = utils.DecryptData(recvData, cryptKey)
 			if err != nil {
 				break
 			}
@@ -195,7 +208,7 @@ func main() {
 			}
 
 			sendData, _ = msgpack.Marshal(outMessage)
-			sendData, _ = utils.EncryptData(sendData, sessionKey)
+			sendData, _ = utils.EncryptData(sendData, cryptKey)
 			_ = functions.SendMsg(conn, sendData)
 		}
 	}

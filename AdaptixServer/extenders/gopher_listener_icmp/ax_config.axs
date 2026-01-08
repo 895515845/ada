@@ -29,6 +29,13 @@ function ListenerUI(mode_create)
     spinFragSize.setValue(65000);
     spinFragSize.setEnabled(mode_create);
 
+    // Sleep时间 - Sleep time (heartbeat interval)
+    let labelSleepTime = form.create_label("Sleep Time (sec):");
+    let spinSleepTime = form.create_spin();
+    spinSleepTime.setRange(1, 3600);
+    spinSleepTime.setValue(5);
+    spinSleepTime.setEnabled(mode_create);
+
     // 错误响应 - Error answer
     let labelAnswer = form.create_label("Error answer:");
     let texteditAnswer = form.create_textmulti("Connection error...\n");
@@ -53,12 +60,14 @@ function ListenerUI(mode_create)
     layout.addWidget(spinTimeout,          2, 1, 1, 3);
     layout.addWidget(labelFragSize,        3, 0, 1, 1);
     layout.addWidget(spinFragSize,         3, 1, 1, 3);
-    layout.addWidget(labelAnswer,          4, 0, 1, 1);
-    layout.addWidget(texteditAnswer,       4, 1, 1, 3);
-    layout.addWidget(labelEncryptKey,      5, 0, 1, 1);
-    layout.addWidget(textlineEncryptKey,   5, 1, 1, 2);
-    layout.addWidget(buttonEncryptKey,     5, 3, 1, 1);
-    layout.addWidget(labelInfo,            6, 0, 1, 4);
+    layout.addWidget(labelSleepTime,       4, 0, 1, 1);
+    layout.addWidget(spinSleepTime,        4, 1, 1, 3);
+    layout.addWidget(labelAnswer,          5, 0, 1, 1);
+    layout.addWidget(texteditAnswer,       5, 1, 1, 3);
+    layout.addWidget(labelEncryptKey,      6, 0, 1, 1);
+    layout.addWidget(textlineEncryptKey,   6, 1, 1, 2);
+    layout.addWidget(buttonEncryptKey,     6, 3, 1, 1);
+    layout.addWidget(labelInfo,            7, 0, 1, 4);
 
     // 生成密钥按钮事件 - Generate key button event
     form.connect(buttonEncryptKey, "clicked", function() {
@@ -71,6 +80,7 @@ function ListenerUI(mode_create)
     container.put("callback_addresses", texteditCallback)
     container.put("timeout", spinTimeout)
     container.put("max_fragment_size", spinFragSize)
+    container.put("sleep_time", spinSleepTime)
     container.put("error_answer", texteditAnswer)
     container.put("encrypt_key", textlineEncryptKey);
 

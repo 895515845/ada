@@ -132,6 +132,11 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 			maxFragmentSize = 65000
 		}
 
+		sleepTime, _ := listenerMap["sleep_time"].(float64)
+		if sleepTime == 0 {
+			sleepTime = 5 // 默认5秒
+		}
+
 		profile := Profile{
 			Type:            uint(agentWatermark),
 			Protocol:        "icmp",
@@ -139,6 +144,7 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 			ConnTimeout:     reconnectTimeout,
 			ConnCount:       generateConfig.ReconnectCount,
 			MaxFragmentSize: int(maxFragmentSize),
+			SleepTime:       int(sleepTime),
 		}
 		profileData, _ = msgpack.Marshal(profile)
 

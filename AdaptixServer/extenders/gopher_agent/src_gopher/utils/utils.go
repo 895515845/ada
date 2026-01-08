@@ -79,6 +79,7 @@ type Profile struct {
 	SslKey          []byte   `msgpack:"ssl_key"`
 	CaCert          []byte   `msgpack:"ca_cert"`
 	MaxFragmentSize int      `msgpack:"max_fragment_size"`
+	SleepTime       int      `msgpack:"sleep_time"`
 }
 
 type SessionInfo struct {

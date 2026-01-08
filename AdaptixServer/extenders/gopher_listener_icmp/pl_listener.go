@@ -84,6 +84,11 @@ func (m *ModuleExtender) HandlerListenerValid(data string) error {
 		return fmt.Errorf("max_fragment_size must be between 100 and %d", MAX_ICMP_PAYLOAD_SIZE)
 	}
 
+	// 验证Sleep时间 - Validate sleep time (0 means use default)
+	if conf.SleepTime != 0 && (conf.SleepTime < 1 || conf.SleepTime > 3600) {
+		return errors.New("sleep_time must be between 1 and 3600 seconds")
+	}
+
 	return nil
 }
 
@@ -117,6 +122,11 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		// 设置默认值 - Set default values
 		if conf.MaxFragmentSize == 0 {
 			conf.MaxFragmentSize = DEFAULT_FRAGMENT_SIZE
+		}
+
+		// 设置默认Sleep时间 - Set default sleep time
+		if conf.SleepTime == 0 {
+			conf.SleepTime = 5 // 默认5秒
 		}
 
 	} else {

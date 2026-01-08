@@ -63,6 +63,7 @@ type ICMPConfig struct {
 	EncryptKey         string `json:"encrypt_key"`         // 加密密钥 - Encryption key
 	Timeout            int    `json:"timeout"`             // 超时时间(秒) - Timeout in seconds
 	MaxFragmentSize    int    `json:"max_fragment_size"`   // 最大分片大小 - Max fragment size
+	SleepTime          int    `json:"sleep_time"`          // 心跳间隔(秒) - Heartbeat interval in seconds
 	ErrorAnswer        string `json:"error_answer"`        // 错误响应 - Error response
 	Protocol           string `json:"protocol"`            // 协议类型 - Protocol type
 }

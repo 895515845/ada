@@ -34,7 +34,7 @@ type QUICConfig struct {
 }
 
 type QUICConnection struct {
-	session      quic.Connection
+	session      any
 	lastActivity time.Time
 	ctx          context.Context
 	handleCancel context.CancelFunc
@@ -202,16 +202,25 @@ func (handler *QUIC) acceptConnections(ts Teamserver) {
 	}
 }
 
-func (handler *QUIC) handleSession(session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleSession(session any, ts Teamserver) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("Recovered from panic in handleSession: %v\n", r)
 		}
-		session.CloseWithError(0, "closing session")
+		if conn, ok := session.(interface{ CloseWithError(quitErrorCode quic.ApplicationErrorCode, reason string) }); ok {
+			conn.CloseWithError(0, "closing session")
+		}
 	}()
 
 	for {
-		stream, err := session.AcceptStream(context.Background())
+		var stream quic.Stream
+		var err error
+		
+		if conn, ok := session.(interface{ AcceptStream(context.Context) (quic.Stream, error) }); ok {
+			stream, err = conn.AcceptStream(context.Background())
+		} else {
+			return
+		}
 		if err != nil {
 			return
 		}
@@ -220,7 +229,7 @@ func (handler *QUIC) handleSession(session quic.Connection, ts Teamserver) {
 	}
 }
 
-func (handler *QUIC) handleStream(stream *quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserver) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("Recovered from panic in handleStream: %v\n", r)
@@ -281,7 +290,7 @@ func (handler *QUIC) handleStream(stream *quic.Stream, session quic.Connection, 
 	}
 }
 
-func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream *quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
 	var sendData []byte
 
 	switch initMsg.Type {
@@ -473,7 +482,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 	}
 }
 
-func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
 	var agentId string
 	var found bool
 

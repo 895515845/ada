@@ -90,6 +90,20 @@ func main() {
 	}
 
 	sessionInfo, sessionKey := CreateInfo()
+
+	// UDP协议需要特殊处理：在 sessionInfo 中使用配置密钥
+	if profile.Protocol == "udp" {
+		// 反序列化 sessionInfo
+		var info utils.SessionInfo
+		_ = msgpack.Unmarshal(sessionInfo, &info)
+		// 修改 EncryptKey 为配置密钥
+		info.EncryptKey = encKey
+		// 重新序列化
+		sessionInfo, _ = msgpack.Marshal(info)
+		// UDP 模式下使用配置密钥作为 sessionKey
+		sessionKey = encKey
+	}
+
 	// UDP协议使用配置密钥，TCP协议使用会话密钥
 	if profile.Protocol == "udp" {
 		utils.SKey = encKey

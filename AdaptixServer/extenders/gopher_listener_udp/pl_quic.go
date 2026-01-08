@@ -370,17 +370,23 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			return
 		}
 
-		if sendData != nil && len(sendData) > 0 {
-			// 加密发送数据
-			sendData, err = EncryptData(sendData, encKey)
-			if err != nil {
-				return
-			}
+		// QUIC 模式必须始终发送响应，即使没有任务也发送空消息
+		// 这样 Agent 才不会阻塞等待
+		if sendData == nil || len(sendData) == 0 {
+			// 创建空的 Message 响应
+			emptyMsg := Message{Type: 1, Object: [][]byte{}}
+			sendData, _ = msgpack.Marshal(emptyMsg)
+		}
 
-			err = handler.sendPacket(stream, sendData)
-			if err != nil {
-				return
-			}
+		// 加密发送数据
+		sendData, err = EncryptData(sendData, encKey)
+		if err != nil {
+			return
+		}
+
+		err = handler.sendPacket(stream, sendData)
+		if err != nil {
+			return
 		}
 
 		_ = ModuleObject.ts.TsAgentSetTick(agentId)
@@ -565,22 +571,26 @@ func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stre
 		return
 	}
 
-	if sendData != nil && len(sendData) > 0 {
-		// 加密发送数据
-		encKey, err := hex.DecodeString(handler.Config.EncryptKey)
-		if err != nil {
-			return
-		}
+	// QUIC 模式必须始终发送响应，即使没有任务也发送空消息
+	if sendData == nil || len(sendData) == 0 {
+		emptyMsg := Message{Type: 1, Object: [][]byte{}}
+		sendData, _ = msgpack.Marshal(emptyMsg)
+	}
 
-		sendData, err = EncryptData(sendData, encKey)
-		if err != nil {
-			return
-		}
+	// 加密发送数据
+	encKey, err := hex.DecodeString(handler.Config.EncryptKey)
+	if err != nil {
+		return
+	}
 
-		err = handler.sendPacket(stream, sendData)
-		if err != nil {
-			return
-		}
+	sendData, err = EncryptData(sendData, encKey)
+	if err != nil {
+		return
+	}
+
+	err = handler.sendPacket(stream, sendData)
+	if err != nil {
+		return
 	}
 
 	_ = ModuleObject.ts.TsAgentSetTick(agentId)

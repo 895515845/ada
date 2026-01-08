@@ -229,7 +229,7 @@ func (handler *QUIC) handleSession(session any, ts Teamserver) {
 	}
 }
 
-func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleStream(stream quic.Stream, session any, ts Teamserver) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("Recovered from panic in handleStream: %v\n", r)
@@ -290,7 +290,7 @@ func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserve
 	}
 }
 
-func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream quic.Stream, session any, ts Teamserver) {
 	var sendData []byte
 
 	switch initMsg.Type {
@@ -304,7 +304,13 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		agentId := fmt.Sprintf("%08x", initPack.Id)
 		agentType := fmt.Sprintf("%08x", initPack.Type)
-		ExternalIP := session.RemoteAddr().String()
+		
+		var ExternalIP string
+		if conn, ok := session.(interface{ RemoteAddr() net.Addr }); ok {
+			ExternalIP = conn.RemoteAddr().String()
+		} else {
+			ExternalIP = "unknown"
+		}
 
 		if !ModuleObject.ts.TsAgentIsExists(agentId) {
 			_, err = ModuleObject.ts.TsAgentCreate(agentType, agentId, initPack.Data, handler.Name, ExternalIP, false)
@@ -482,7 +488,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 	}
 }
 
-func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stream, session any, ts Teamserver) {
+func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream quic.Stream, session any, ts Teamserver) {
 	var agentId string
 	var found bool
 
@@ -552,7 +558,9 @@ func (handler *QUIC) Stop() error {
 			connection.handleCancel()
 		}
 		if connection.session != nil {
-			connection.session.CloseWithError(0, "listener stopping")
+			if conn, ok := connection.session.(interface{ CloseWithError(quitErrorCode quic.ApplicationErrorCode, reason string) }); ok {
+				conn.CloseWithError(0, "listener stopping")
+			}
 		}
 		return true
 	})
@@ -568,7 +576,7 @@ func (handler *QUIC) Stop() error {
 	return nil
 }
 
-func (handler *QUIC) sendPacket(stream *quic.Stream, data []byte) error {
+func (handler *QUIC) sendPacket(stream quic.Stream, data []byte) error {
 	if stream == nil {
 		return errors.New("stream is nil")
 	}

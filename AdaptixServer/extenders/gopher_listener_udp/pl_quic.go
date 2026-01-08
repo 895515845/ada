@@ -359,12 +359,23 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		handler.AgentConnects.Put(agentId, connection)
 
+		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
+
 		sendData, err = ModuleObject.ts.TsAgentGetHostedTasks(agentId, 0x1900000)
 		if err != nil {
 			return
 		}
 
 		if sendData != nil && len(sendData) > 0 {
+			// 加密发送数据
+			sendData, err = EncryptData(sendData, encKey)
+			if err != nil {
+				return
+			}
+
 			err = handler.sendPacket(stream, sendData)
 			if err != nil {
 				return
@@ -554,6 +565,17 @@ func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stre
 	}
 
 	if sendData != nil && len(sendData) > 0 {
+		// 加密发送数据
+		encKey, err := hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
+
+		sendData, err = EncryptData(sendData, encKey)
+		if err != nil {
+			return
+		}
+
 		err = handler.sendPacket(stream, sendData)
 		if err != nil {
 			return

@@ -38,7 +38,7 @@ type QUICConnection struct {
 	lastActivity time.Time
 	ctx          context.Context
 	handleCancel context.CancelFunc
-	streamLock   sync.Mutex // 保护并发流访问
+	streamLock   sync.Mutex
 }
 
 type QUIC struct {
@@ -216,12 +216,11 @@ func (handler *QUIC) handleSession(session quic.Connection, ts Teamserver) {
 			return
 		}
 
-		// 为每个流启动独立的 goroutine 处理
 		go handler.handleStream(stream, session, ts)
 	}
 }
 
-func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleStream(stream *quic.Stream, session quic.Connection, ts Teamserver) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("Recovered from panic in handleStream: %v\n", r)
@@ -229,7 +228,6 @@ func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, t
 		stream.Close()
 	}()
 
-	// 持续处理该流上的多个消息
 	for {
 		var (
 			recvData      []byte
@@ -239,10 +237,8 @@ func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, t
 			initMsg       StartMsg
 		)
 
-		// 设置读取超时
 		stream.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-		// QUIC 数据包格式：[4字节长度前缀] + [加密数据]
 		lenBuf := make([]byte, 4)
 		_, err = io.ReadFull(stream, lenBuf)
 		if err != nil {
@@ -270,14 +266,12 @@ func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, t
 			return
 		}
 
-		// 尝试解析为 StartMsg
 		err = msgpack.Unmarshal(decryptedData, &initMsg)
 		if err == nil && initMsg.Type >= INIT_PACK && initMsg.Type <= TERMINAL_PACK {
 			handler.handleStartMsg(initMsg, decryptedData, stream, session, ts)
 			continue
 		}
 
-		// 尝试解析为普通 Message
 		var normalMsg Message
 		err = msgpack.Unmarshal(decryptedData, &normalMsg)
 		if err == nil && normalMsg.Type == 1 {
@@ -287,7 +281,7 @@ func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, t
 	}
 }
 
-func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stream *quic.Stream, session quic.Connection, ts Teamserver) {
 	var sendData []byte
 
 	switch initMsg.Type {
@@ -479,11 +473,10 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 	}
 }
 
-func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream quic.Stream, session quic.Connection, ts Teamserver) {
+func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stream, session quic.Connection, ts Teamserver) {
 	var agentId string
 	var found bool
 
-	// 根据 session 查找对应的 agentId
 	handler.AgentConnects.ForEach(func(key string, valueConn interface{}) bool {
 		connection, ok := valueConn.(QUICConnection)
 		if !ok {
@@ -566,12 +559,11 @@ func (handler *QUIC) Stop() error {
 	return nil
 }
 
-func (handler *QUIC) sendPacket(stream quic.Stream, data []byte) error {
+func (handler *QUIC) sendPacket(stream *quic.Stream, data []byte) error {
 	if stream == nil {
 		return errors.New("stream is nil")
 	}
 
-	// 设置写入超时
 	stream.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
 	msgLen := make([]byte, 4)

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/kbinani/screenshot"
 )
@@ -373,6 +374,31 @@ func ConnRead(conn net.Conn, size int) ([]byte, error) {
 }
 
 func RecvMsg(conn net.Conn) ([]byte, error) {
+	if _, ok := conn.(*net.UDPConn); ok {
+		// UDP implementation: read entire packet at once
+		buf := make([]byte, 65535)
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return nil, err
+		}
+
+		n, err := conn.Read(buf)
+		if err != nil {
+			return nil, err
+		}
+
+		if n < 4 {
+			return nil, errors.New("packet too short")
+		}
+
+		msgLen := binary.BigEndian.Uint32(buf[:4])
+		if int(msgLen) > n-4 {
+			return nil, errors.New("incomplete packet")
+		}
+
+		return buf[4 : 4+msgLen], nil
+	}
+
+	// TCP implementation
 	bufLen, err := ConnRead(conn, 4)
 	if err != nil {
 		return nil, err

@@ -16,7 +16,46 @@ import (
 	"time"
 
 	"github.com/kbinani/screenshot"
+	"github.com/quic-go/quic-go"
 )
+
+// QUICStreamConn 将 QUIC Stream 包装成 net.Conn 接口
+type QUICStreamConn struct {
+	Stream  quic.Stream
+	Session quic.Connection
+}
+
+func (q *QUICStreamConn) Read(b []byte) (n int, err error) {
+	return q.Stream.Read(b)
+}
+
+func (q *QUICStreamConn) Write(b []byte) (n int, err error) {
+	return q.Stream.Write(b)
+}
+
+func (q *QUICStreamConn) Close() error {
+	return q.Stream.Close()
+}
+
+func (q *QUICStreamConn) LocalAddr() net.Addr {
+	return q.Session.LocalAddr()
+}
+
+func (q *QUICStreamConn) RemoteAddr() net.Addr {
+	return q.Session.RemoteAddr()
+}
+
+func (q *QUICStreamConn) SetDeadline(t time.Time) error {
+	return q.Stream.SetDeadline(t)
+}
+
+func (q *QUICStreamConn) SetReadDeadline(t time.Time) error {
+	return q.Stream.SetReadDeadline(t)
+}
+
+func (q *QUICStreamConn) SetWriteDeadline(t time.Time) error {
+	return q.Stream.SetWriteDeadline(t)
+}
 
 /// FS
 
@@ -374,31 +413,7 @@ func ConnRead(conn net.Conn, size int) ([]byte, error) {
 }
 
 func RecvMsg(conn net.Conn) ([]byte, error) {
-	if _, ok := conn.(*net.UDPConn); ok {
-		// UDP implementation: read entire packet at once
-		buf := make([]byte, 65535)
-		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			return nil, err
-		}
-
-		n, err := conn.Read(buf)
-		if err != nil {
-			return nil, err
-		}
-
-		if n < 4 {
-			return nil, errors.New("packet too short")
-		}
-
-		msgLen := binary.BigEndian.Uint32(buf[:4])
-		if int(msgLen) > n-4 {
-			return nil, errors.New("incomplete packet")
-		}
-
-		return buf[4 : 4+msgLen], nil
-	}
-
-	// TCP implementation
+	// 对于所有连接类型（TCP/TLS/QUIC），使用统一的处理方式
 	bufLen, err := ConnRead(conn, 4)
 	if err != nil {
 		return nil, err

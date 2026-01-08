@@ -19,7 +19,7 @@ func (m *ModuleExtender) HandlerListenerValid(data string) error {
 
 	var (
 		err  error
-		conf UDPConfig
+		conf QUICConfig
 	)
 
 	err = json.Unmarshal([]byte(data), &conf)
@@ -92,8 +92,8 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 	/// START CODE HERE
 
 	var (
-		listener *UDP
-		conf     UDPConfig
+		listener *QUIC
+		conf     QUICConfig
 		err      error
 	)
 
@@ -107,7 +107,7 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, "\n", ", ")
 		conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
 
-		conf.Protocol = "udp"
+		conf.Protocol = "quic"
 
 	} else {
 		err = json.Unmarshal(listenerCustomData, &conf)
@@ -116,7 +116,7 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		}
 	}
 
-	listener = &UDP{
+	listener = &QUIC{
 		Name:          name,
 		Config:        conf,
 		AgentConnects: NewMap(),
@@ -132,7 +132,7 @@ func (m *ModuleExtender) HandlerCreateListenerDataAndStart(name string, configDa
 		BindHost:  listener.Config.HostBind,
 		BindPort:  strconv.Itoa(listener.Config.PortBind),
 		AgentAddr: conf.Callback_addresses,
-		Protocol:  "udp",
+		Protocol:  "quic",
 		Status:    "Listen",
 	}
 
@@ -163,10 +163,10 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 
 	var (
 		err  error
-		conf UDPConfig
+		conf QUICConfig
 	)
 
-	listener := listenerObject.(*UDP)
+	listener := listenerObject.(*QUIC)
 	if listener.Name == name {
 
 		err = json.Unmarshal([]byte(configData), &conf)
@@ -185,7 +185,7 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 			BindHost:  listener.Config.HostBind,
 			BindPort:  strconv.Itoa(listener.Config.PortBind),
 			AgentAddr: listener.Config.Callback_addresses,
-			Protocol:  "udp",
+			Protocol:  "quic",
 			Status:    "Listen",
 		}
 		if !listener.Active {
@@ -215,7 +215,7 @@ func (m *ModuleExtender) HandlerListenerStop(name string, listenerObject any) (b
 
 	/// START CODE HERE
 
-	listener := listenerObject.(*UDP)
+	listener := listenerObject.(*QUIC)
 	if listener.Name == name {
 		err = listener.Stop()
 		ok = true
@@ -234,7 +234,7 @@ func (m *ModuleExtender) HandlerListenerGetProfile(name string, listenerObject a
 
 	/// START CODE HERE
 
-	listener := listenerObject.(*UDP)
+	listener := listenerObject.(*QUIC)
 	if listener.Name == name {
 		_ = json.NewEncoder(&object).Encode(listener.Config)
 		ok = true

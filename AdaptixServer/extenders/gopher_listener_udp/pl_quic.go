@@ -60,6 +60,9 @@ const (
 	TERMINAL_PACK = 5
 )
 
+// DEBUG_NO_ENCRYPT 调试模式：禁用加密
+const DEBUG_NO_ENCRYPT = true
+
 type StartMsg struct {
 	Type int    `msgpack:"id"`
 	Data []byte `msgpack:"data"`
@@ -292,14 +295,20 @@ func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserve
 			return
 		}
 
-		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
-		if err != nil {
-			return
-		}
+		// 调试模式：禁用解密
+		if DEBUG_NO_ENCRYPT {
+			decryptedData = recvData
+			fmt.Printf("[QUIC DEBUG] Received %d bytes (no decrypt)\n", len(recvData))
+		} else {
+			encKey, err = hex.DecodeString(handler.Config.EncryptKey)
+			if err != nil {
+				return
+			}
 
-		decryptedData, err = DecryptData(recvData, encKey)
-		if err != nil {
-			return
+			decryptedData, err = DecryptData(recvData, encKey)
+			if err != nil {
+				return
+			}
 		}
 
 		err = msgpack.Unmarshal(decryptedData, &initMsg)
@@ -378,10 +387,14 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			sendData, _ = msgpack.Marshal(emptyMsg)
 		}
 
-		// 加密发送数据
-		sendData, err = EncryptData(sendData, encKey)
-		if err != nil {
-			return
+		// 调试模式：禁用加密
+		if !DEBUG_NO_ENCRYPT {
+			sendData, err = EncryptData(sendData, encKey)
+			if err != nil {
+				return
+			}
+		} else {
+			fmt.Printf("[QUIC DEBUG] Sending %d bytes (no encrypt)\n", len(sendData))
 		}
 
 		err = handler.sendPacket(stream, sendData)
@@ -577,15 +590,19 @@ func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stre
 		sendData, _ = msgpack.Marshal(emptyMsg)
 	}
 
-	// 加密发送数据
-	encKey, err := hex.DecodeString(handler.Config.EncryptKey)
-	if err != nil {
-		return
-	}
+	// 调试模式：禁用加密
+	if !DEBUG_NO_ENCRYPT {
+		encKey, err := hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
 
-	sendData, err = EncryptData(sendData, encKey)
-	if err != nil {
-		return
+		sendData, err = EncryptData(sendData, encKey)
+		if err != nil {
+			return
+		}
+	} else {
+		fmt.Printf("[QUIC DEBUG] handleNormalMessage: Sending %d bytes (no encrypt)\n", len(sendData))
 	}
 
 	err = handler.sendPacket(stream, sendData)

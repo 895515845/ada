@@ -22,6 +22,9 @@ import (
 
 var ACTIVE = true
 
+// DEBUG_NO_ENCRYPT 调试模式：禁用加密
+const DEBUG_NO_ENCRYPT = true
+
 func CreateInfo() ([]byte, []byte) {
 	var (
 		addr     []net.Addr
@@ -120,7 +123,10 @@ func main() {
 
 	initData, _ := msgpack.Marshal(utils.InitPack{Id: uint(AgentId), Type: profile.Type, Data: sessionInfo})
 	initMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.INIT_PACK, Data: initData})
-	initMsg, _ = utils.EncryptData(initMsg, encKey)
+	// 调试模式：禁用加密
+	if !DEBUG_NO_ENCRYPT {
+		initMsg, _ = utils.EncryptData(initMsg, encKey)
+	}
 
 	UPLOADS = make(map[string][]byte)
 	DOWNLOADS = make(map[string]utils.Connection)
@@ -261,10 +267,13 @@ func main() {
 			}
 
 			outMessage = utils.Message{Type: 0}
+		// 调试模式：禁用解密
+		if !DEBUG_NO_ENCRYPT {
 			recvData, err = utils.DecryptData(recvData, cryptKey)
 			if err != nil {
 				break
 			}
+		}
 
 			err = msgpack.Unmarshal(recvData, &inMessage)
 			if err != nil {
@@ -279,7 +288,10 @@ func main() {
 
 			// 发送响应
 			sendData, _ = msgpack.Marshal(outMessage)
-			sendData, _ = utils.EncryptData(sendData, cryptKey)
+			// 调试模式：禁用加密
+			if !DEBUG_NO_ENCRYPT {
+				sendData, _ = utils.EncryptData(sendData, cryptKey)
+			}
 
 			err = functions.SendMsg(conn, sendData)
 			if err != nil {

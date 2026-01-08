@@ -165,7 +165,8 @@ ULONG Packer::Unpack32()
     if ( this->size - this->index < 4 )
         return 0;
 
-    memcpy(&value, this->buffer + this->index, 4);
+    PUCHAR place = this->buffer + this->index;
+    value = place[0] | (place[1] << 8) | (place[2] << 16) | (place[3] << 24);
 
     this->index += 4;
 

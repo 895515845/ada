@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix Windows ICMP agent command execution\n\n- Add fragment reassembly support for Windows ICMP\n- Fix sleep command by using global profile.SleepTime\n- Add cross-platform KillProcess function\n- Sync Windows and Linux ICMP logic\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)",
-      "Bash(tshark:*)"
-    ]
-  }
-}

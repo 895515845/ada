@@ -184,18 +184,18 @@ func (handler *QUIC) Start(ts Teamserver) error {
 	}
 
 	// 设置UDP接收缓冲区大小为7MB（quic-go推荐的大小）
-	err = udpConn.SetReadBuffer(7 * 1024 * 1024)
-	if err != nil {
-		// Just log warning, don't fail
-		fmt.Printf("Warning: failed to set UDP read buffer: %v\n", err)
-	}
+	// err = udpConn.SetReadBuffer(7 * 1024 * 1024)
+	// if err != nil {
+	// 	// Just log warning, don't fail
+	// 	// fmt.Printf("Warning: failed to set UDP read buffer: %v\n", err)
+	// }
 
 	// 设置UDP发送缓冲区大小为7MB
-	err = udpConn.SetWriteBuffer(7 * 1024 * 1024)
-	if err != nil {
-		// Just log warning, don't fail
-		fmt.Printf("Warning: failed to set UDP write buffer: %v\n", err)
-	}
+	// err = udpConn.SetWriteBuffer(7 * 1024 * 1024)
+	// if err != nil {
+	// 	// Just log warning, don't fail
+	// 	// fmt.Printf("Warning: failed to set UDP write buffer: %v\n", err)
+	// }
 
 	// 使用配置好的UDP连接创建QUIC listener
 	handler.Listener, err = quic.Listen(udpConn, tlsConfig, quicConfig)

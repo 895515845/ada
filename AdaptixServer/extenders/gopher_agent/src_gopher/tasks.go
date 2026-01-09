@@ -892,7 +892,7 @@ func jobRun(paramsData []byte) ([]byte, error) {
 		}()
 
 		done := make(chan struct{})
-		var lastOutLen, lastErrLen int
+
 		const maxChunkSize = 0x10000 // 65 Kb
 		go func() {
 			ticker := time.NewTicker(1 * time.Second)
@@ -1379,13 +1379,20 @@ func jobTerminal(paramsData []byte) {
 				// Framed Writer for QUIC: Pty -> Conn
 				buf := make([]byte, 8192)
 
-				// Send initial empty packet to kickstart connection (fix Waiting status)
-				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: nil}
+				// Send initial packet with Newline to kickstart connection
+				fmt.Println("[DEBUG] Starting Terminal Init...")
+				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: []byte("\n")}
 				initTpData, _ := msgpack.Marshal(initTermPack)
 				initStartMsg := utils.StartMsg{Type: utils.JOB_TERMINAL, Data: initTpData}
 				initSmData, _ := msgpack.Marshal(initStartMsg)
-				initFinalData, _ := utils.EncryptData(initSmData, encKey)
-				_ = functions.SendMsg(srvConn, initFinalData)
+				
+				// Send PLAINTEXT to match current global no-encrypt configuration
+				if errSend := functions.SendMsg(srvConn, initSmData); errSend == nil {
+					fmt.Println("[DEBUG] Init packet sent successfully (Plaintext)")
+				} else {
+					fmt.Printf("[DEBUG] Failed to send init packet: %v\n", errSend)
+				}
+				time.Sleep(100 * time.Millisecond)
 
 				for {
 					var n int

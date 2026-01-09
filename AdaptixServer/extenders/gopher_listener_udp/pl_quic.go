@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/hex"
 
 	"encoding/pem"
 	"errors"
@@ -298,21 +299,17 @@ func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserve
 			return
 		}
 
-		// 调试模式：禁用解密
-		// if DEBUG_NO_ENCRYPT {
-			decryptedData = recvData
-			// fmt.Printf("[QUIC DEBUG] Received %d bytes (no decrypt)\n", len(recvData))
-		// } else {
-		// 	encKey, err = hex.DecodeString(handler.Config.EncryptKey)
-		// 	if err != nil {
-		// 		return
-		// 	}
+		// Decryption logic restored
+		var encKey []byte
+		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
 
-		// 	decryptedData, err = DecryptData(recvData, encKey)
-		// 	if err != nil {
-		// 		return
-		// 	}
-		// }
+		decryptedData, err = DecryptData(recvData, encKey)
+		if err != nil {
+			return
+		}
 
 		err = msgpack.Unmarshal(decryptedData, &initMsg)
 		if err == nil && initMsg.Type >= INIT_PACK && initMsg.Type <= TERMINAL_PACK {

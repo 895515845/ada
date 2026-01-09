@@ -1381,16 +1381,27 @@ func jobTerminal(paramsData []byte) {
 
 				// Send initial packet with Newline to kickstart connection
 				fmt.Println("[DEBUG] Starting Terminal Init...")
-				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: []byte("\n")}
+				
+				// Encrypt payload to maintain stream cipher state sync
+				initPayload := []byte("\n")
+				encInitPayload := make([]byte, len(initPayload))
+				encStream.XORKeyStream(encInitPayload, initPayload)
+
+				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: encInitPayload}
 				initTpData, _ := msgpack.Marshal(initTermPack)
 				initStartMsg := utils.StartMsg{Type: utils.JOB_TERMINAL, Data: initTpData}
 				initSmData, _ := msgpack.Marshal(initStartMsg)
 				
-				// Send PLAINTEXT to match current global no-encrypt configuration
-				if errSend := functions.SendMsg(srvConn, initSmData); errSend == nil {
-					fmt.Println("[DEBUG] Init packet sent successfully (Plaintext)")
+				// Re-enable Transport Encryption to match global state
+				initFinalData, errEnc := utils.EncryptData(initSmData, utils.SKey)
+				if errEnc == nil {
+					if errSend := functions.SendMsg(srvConn, initFinalData); errSend == nil {
+						fmt.Println("[DEBUG] Init packet sent successfully (Encrypted)")
+					} else {
+						fmt.Printf("[DEBUG] Failed to send init packet: %v\n", errSend)
+					}
 				} else {
-					fmt.Printf("[DEBUG] Failed to send init packet: %v\n", errSend)
+					fmt.Printf("[DEBUG] Failed to encrypt init packet: %v\n", errEnc)
 				}
 				time.Sleep(100 * time.Millisecond)
 

@@ -1088,7 +1088,9 @@ func jobTunnel(paramsData []byte) {
 			srvConn, err = net.Dial("tcp", profile.Addresses[0])
 		}
 		if err != nil {
-			srvConn.Close()
+			if srvConn != nil {
+				srvConn.Close()
+			}
 			return
 		}
 
@@ -1385,6 +1387,7 @@ func jobTerminal(paramsData []byte) {
 				buf := make([]byte, 8192)
 
 				// Send initial packet with Newline to kickstart connection
+				fmt.Printf("[DEBUG] Starting Terminal Program: '%s' Size: %dx%d\n", params.Program, params.Width, params.Height)
 				fmt.Println("[DEBUG] Starting Terminal Init...")
 				
 				// Encrypt payload to maintain stream cipher state sync

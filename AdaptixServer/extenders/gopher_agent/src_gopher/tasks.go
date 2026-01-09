@@ -1367,6 +1367,7 @@ func jobTerminal(paramsData []byte) {
 						}
 						
 						if err != nil {
+							fmt.Printf("[DEBUG] Reader Loop Error (Write to PTY): %v\n", err)
 							break
 						}
 					}
@@ -1442,6 +1443,11 @@ func jobTerminal(paramsData []byte) {
 						}
 					}
 					if err != nil {
+						if err != io.EOF {
+							fmt.Printf("[DEBUG] Writer Loop Error (PTY Read/Send): %v\n", err)
+						} else {
+							fmt.Println("[DEBUG] Writer Loop: PTY Closed (EOF)")
+						}
 						break
 					}
 				}

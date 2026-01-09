@@ -73,6 +73,10 @@ func (m *ModuleExtender) HandlerListenerValid(data string) error {
 		return errors.New("Timeout must be greater than 0")
 	}
 
+	if conf.Sleep < 0 {
+		return errors.New("Sleep must be greater than or equal to 0")
+	}
+
 	match, _ := regexp.MatchString("^[0-9a-f]{32}$", conf.EncryptKey)
 	if len(conf.EncryptKey) != 32 || !match {
 		return errors.New("encrypt_key must be 32 hex characters")
@@ -180,6 +184,7 @@ func (m *ModuleExtender) HandlerEditListenerData(name string, listenerObject any
 
 		listener.Config.Callback_addresses = conf.Callback_addresses
 		listener.Config.Timeout = conf.Timeout
+		listener.Config.Sleep = conf.Sleep
 
 		listenerData = adaptix.ListenerData{
 			BindHost:  listener.Config.HostBind,

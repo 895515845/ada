@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -31,6 +32,7 @@ type QUICConfig struct {
 	EncryptKey         string `json:"encrypt_key"`
 	Timeout            int    `json:"timeout"`
 	Protocol           string `json:"protocol"`
+	Sleep              int    `json:"sleep"`
 }
 
 type QUICConnection struct {
@@ -297,7 +299,7 @@ func (handler *QUIC) handleStream(stream *quic.Stream, session any, ts Teamserve
 		// 调试模式：禁用解密
 		// if DEBUG_NO_ENCRYPT {
 			decryptedData = recvData
-			fmt.Printf("[QUIC DEBUG] Received %d bytes (no decrypt)\n", len(recvData))
+			// fmt.Printf("[QUIC DEBUG] Received %d bytes (no decrypt)\n", len(recvData))
 		// } else {
 		// 	encKey, err = hex.DecodeString(handler.Config.EncryptKey)
 		// 	if err != nil {
@@ -393,8 +395,12 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 		// 		return
 		// 	}
 		// } else {
-			fmt.Printf("[QUIC DEBUG] Sending %d bytes (no encrypt)\n", len(sendData))
+			// fmt.Printf("[QUIC DEBUG] Sending %d bytes (no encrypt)\n", len(sendData))
 		// }
+
+		if handler.Config.Sleep > 0 {
+			time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
+		}
 
 		err = handler.sendPacket(stream, sendData)
 		if err != nil {
@@ -603,6 +609,10 @@ func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stre
 	// } else {
 	// 	fmt.Printf("[QUIC DEBUG] handleNormalMessage: Sending %d bytes (no encrypt)\n", len(sendData))
 	// }
+
+	if handler.Config.Sleep > 0 {
+		time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
+	}
 
 	err = handler.sendPacket(stream, sendData)
 	if err != nil {

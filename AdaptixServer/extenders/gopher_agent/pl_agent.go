@@ -594,6 +594,19 @@ func CreateTask(ts Teamserver, agent adaptix.AgentData, args map[string]any) (ad
 	case "pwd":
 		cmd = Command{Code: COMMAND_PWD, Data: nil}
 
+	case "sleep":
+		sleep, ok := args["sleep"].(float64)
+		if !ok {
+			err = errors.New("parameter 'sleep' must be set")
+			goto RET
+		}
+		jitter, ok := args["jitter"].(float64)
+		if !ok {
+			jitter = 0
+		}
+		packerData, _ := msgpack.Marshal(ParamsSleep{Sleep: int(sleep), Jitter: int(jitter)})
+		cmd = Command{Code: COMMAND_SLEEP, Data: packerData}
+
 	case "rev2self":
 		cmd = Command{Code: COMMAND_REV2SELF, Data: nil}
 

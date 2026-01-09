@@ -181,6 +181,10 @@ function RegisterCommands(listenerType)
     cmd_zip_unix.addArgString("path", true);
     cmd_zip_unix.addArgString("zip_path", true);
 
+    let cmd_sleep = ax.create_command("sleep", "Change agent sleep settings", "sleep 10 20", "Task: change sleep");
+    cmd_sleep.addArgInt("sleep", true);
+    cmd_sleep.addArgInt("jitter", false);
+
     let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_socks, cmd_sleep, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
     let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_socks, cmd_sleep, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
 

@@ -17,7 +17,7 @@
       "extenders/beacon_listener_tcp/config.json",
       "extenders/beacon_agent/config.json",
       "extenders/gopher_listener_tcp/config.json",
-      "extenders/gopher_listener_icmp/config.json",
+      "extenders/gopher_listener_udp/config.json",
       "extenders/gopher_agent/config.json"
     ],
     "access_token_live_hours": 12,

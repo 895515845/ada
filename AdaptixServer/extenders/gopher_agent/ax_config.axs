@@ -3,26 +3,6 @@
 let exit_action = menu.create_action("Exit", function(agents_id) { agents_id.forEach(id => ax.execute_command(id, "exit")) });
 menu.add_session_agent(exit_action, ["gopher"])
 
-let sleep_action = menu.create_action("Sleep", function(agents_id) {
-    let label_sec = form.create_label("Sleep time (seconds):");
-    let spin_sec = form.create_spin();
-    spin_sec.setRange(1, 3600);
-    spin_sec.setValue(5);
-
-    let layout = form.create_gridlayout();
-    layout.addWidget(label_sec, 0, 0, 1, 1);
-    layout.addWidget(spin_sec, 0, 1, 1, 1);
-
-    let dialog = form.create_dialog("Set Sleep Time");
-    dialog.setSize(300, 80);
-    dialog.setLayout(layout);
-    if ( dialog.exec() == true )
-    {
-        agents_id.forEach(id => ax.execute_command(id, "sleep " + spin_sec.value()));
-    }
-});
-menu.add_session_agent(sleep_action, ["gopher"])
-
 let file_browser_action     = menu.create_action("File Browser",    function(agents_id) { agents_id.forEach(id => ax.open_browser_files(id)) });
 let process_browser_action  = menu.create_action("Process Browser", function(agents_id) { agents_id.forEach(id => ax.open_browser_process(id)) });
 let terminal_browser_action = menu.create_action("Remote Terminal", function(agents_id) { agents_id.forEach(id => ax.open_remote_terminal(id)) });
@@ -171,9 +151,6 @@ function RegisterCommands(listenerType)
 
     let cmd_screenshot = ax.create_command("screenshot", "Take a single screenshot", "screenshot", "Task: screenshot");
 
-    let cmd_sleep = ax.create_command("sleep", "Change agent sleep time (seconds)", "sleep 5", "Task: change sleep time");
-    cmd_sleep.addArgInt("seconds", true);
-
     let _cmd_socks_start = ax.create_command("start", "Start a SOCKS5 proxy server and listen on a specified port", "socks start 1080 -a user pass");
     _cmd_socks_start.addArgFlagString("-h", "address", "Listening interface address", "0.0.0.0");
     _cmd_socks_start.addArgInt("port", true, "Listen port");
@@ -204,8 +181,8 @@ function RegisterCommands(listenerType)
     cmd_zip_unix.addArgString("path", true);
     cmd_zip_unix.addArgString("zip_path", true);
 
-    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_sleep, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
-    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_sleep, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
+    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
+    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
 
     return {
         commands_windows: commands_win,

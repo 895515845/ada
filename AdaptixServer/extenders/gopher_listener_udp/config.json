@@ -1,0 +1,9 @@
+{
+  "extender_type": "listener",
+  "extender_file": "listener_gopher_quic.so",
+  "ax_file": "ax_config.axs",
+
+  "listener_name": "GopherQUIC",
+  "listener_type": "external",
+  "protocol": "quic"
+}

@@ -672,6 +672,9 @@ func (handler *ICMP) processTerminalPack(ts Teamserver, srcIP string, echoID int
 func (handler *ICMP) handleTSRequest(srcIP string, echoID int, echoSeq int, header ICMPHeader) {
 	response := handler.BeaconManager.getResponse(header.Identifier)
 	if response == nil {
+		// 没有任务时发送空的ACK，让Agent知道服务端已处理请求
+		// Send empty ACK when no tasks, so Agent knows server processed the request
+		handler.sendICMPReply(srcIP, echoID, echoSeq, TYPE_ACK, header.Identifier, 0, 0, nil)
 		return
 	}
 

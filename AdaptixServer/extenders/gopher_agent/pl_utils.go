@@ -10,18 +10,16 @@ import (
 )
 
 type Profile struct {
-	Type            uint     `msgpack:"type"`
-	Protocol        string   `msgpack:"protocol"`
-	Addresses       []string `msgpack:"addresses"`
-	BannerSize      int      `msgpack:"banner_size"`
-	ConnTimeout     int      `msgpack:"conn_timeout"`
-	ConnCount       int      `msgpack:"conn_count"`
-	UseSSL          bool     `msgpack:"use_ssl"`
-	SslCert         []byte   `msgpack:"ssl_cert"`
-	SslKey          []byte   `msgpack:"ssl_key"`
-	CaCert          []byte   `msgpack:"ca_cert"`
-	MaxFragmentSize int      `msgpack:"max_fragment_size"`
-	SleepTime       int      `msgpack:"sleep_time"`
+	Type        uint     `msgpack:"type"`
+	Protocol    string   `msgpack:"protocol"`
+	Addresses   []string `msgpack:"addresses"`
+	BannerSize  int      `msgpack:"banner_size"`
+	ConnTimeout int      `msgpack:"conn_timeout"`
+	ConnCount   int      `msgpack:"conn_count"`
+	UseSSL      bool     `msgpack:"use_ssl"`
+	SslCert     []byte   `msgpack:"ssl_cert"`
+	SslKey      []byte   `msgpack:"ssl_key"`
+	CaCert      []byte   `msgpack:"ca_cert"`
 }
 
 type SessionInfo struct {
@@ -246,14 +244,6 @@ type AnsExecBof struct {
 	Msgs []byte `msgpack:"msgs"`
 }
 
-type ParamsSleep struct {
-	Seconds int `msgpack:"seconds"`
-}
-
-type AnsSleep struct {
-	Seconds int `msgpack:"seconds"`
-}
-
 const (
 	COMMAND_ERROR      = 0
 	COMMAND_PWD        = 1
@@ -285,8 +275,6 @@ const (
 
 	COMMAND_EXEC_BOF     = 50
 	COMMAND_EXEC_BOF_OUT = 51
-
-	COMMAND_SLEEP = 60
 
 	CALLBACK_OUTPUT      = 0x0
 	CALLBACK_OUTPUT_OEM  = 0x1e

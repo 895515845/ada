@@ -300,14 +300,12 @@ func RunICMPLoop(prof utils.Profile, agentId uint32, initMsg []byte, encKey []by
 
 			var inMessage utils.Message
 
-			// TODO: 测试阶段暂时禁用加密，功能测试通过后启用
-			// TODO: Encryption disabled for testing, enable after functionality test passes
-			/*
-				recvData, err = utils.DecryptData(recvData, sessionKey)
-				if err != nil {
-					break
-				}
-			*/
+			// 解密接收的数据
+			// Decrypt received data
+			recvData, err = utils.DecryptData(recvData, sessionKey)
+			if err != nil {
+				break
+			}
 
 			err = msgpack.Unmarshal(recvData, &inMessage)
 			if err != nil {
@@ -321,9 +319,9 @@ func RunICMPLoop(prof utils.Profile, agentId uint32, initMsg []byte, encKey []by
 			}
 
 			sendData, _ := msgpack.Marshal(outMessage)
-			// TODO: 测试阶段暂时禁用加密，功能测试通过后启用
-			// TODO: Encryption disabled for testing, enable after functionality test passes
-			// sendData, _ = utils.EncryptData(sendData, sessionKey)
+			// 加密发送的数据
+			// Encrypt data before sending
+			sendData, _ = utils.EncryptData(sendData, sessionKey)
 
 			err = icmpConn.SendData(sendData)
 			if err != nil {

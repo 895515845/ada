@@ -205,12 +205,3 @@ func RelayPtyToConn(to *cipher.StreamWriter, from any) {
 }
 
 func Rev2Self() {}
-
-// KillProcess 终止指定PID的进程 (macOS)
-func KillProcess(pid int) error {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	return proc.Signal(syscall.SIGKILL)
-}

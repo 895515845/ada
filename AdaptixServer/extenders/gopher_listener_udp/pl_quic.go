@@ -368,11 +368,11 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		handler.AgentConnects.Put(agentId, connection)
 
-		// var encKey []byte
-		// encKey, err = hex.DecodeString(handler.Config.EncryptKey)
-		// if err != nil {
-		// 	return
-		// }
+		var encKey []byte
+		encKey, err = hex.DecodeString(handler.Config.EncryptKey)
+		if err != nil {
+			return
+		}
 
 		sendData, err = ModuleObject.ts.TsAgentGetHostedTasks(agentId, 0x1900000)
 		if err != nil {
@@ -387,12 +387,12 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			sendData, _ = msgpack.Marshal(emptyMsg)
 		}
 
-		// 调试模式：禁用加密
+		// Enable Encryption
 		// if !DEBUG_NO_ENCRYPT {
-		// 	sendData, err = EncryptData(sendData, encKey)
-		// 	if err != nil {
-		// 		return
-		// 	}
+			sendData, err = EncryptData(sendData, encKey)
+			if err != nil {
+				return
+			}
 		// } else {
 			// fmt.Printf("[QUIC DEBUG] Sending %d bytes (no encrypt)\n", len(sendData))
 		// }

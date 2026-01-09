@@ -115,6 +115,8 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 			SslCert:     sslCert,
 			SslKey:      sslKey,
 			CaCert:      caCert,
+			Sleep:       0,
+			Jitter:      0,
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
@@ -138,6 +140,8 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 			SslCert:     nil,
 			SslKey:      nil,
 			CaCert:      nil,
+			Sleep:       0,
+			Jitter:      0,
 		}
 		profileData, _ = msgpack.Marshal(profile)
 
@@ -150,6 +154,9 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 		servers = strings.TrimSuffix(servers, ",")
 		addresses := strings.Split(servers, ",")
 
+		sleepVal, _ := listenerMap["sleep"].(float64) 
+		sleep := int(sleepVal)
+
 		profile := Profile{
 			Type:        uint(agentWatermark),
 			Protocol:    "quic",
@@ -161,6 +168,8 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 			SslCert:     nil,
 			SslKey:      nil,
 			CaCert:      nil,
+			Sleep:       sleep,
+			Jitter:      0,
 		}
 		profileData, _ = msgpack.Marshal(profile)
 

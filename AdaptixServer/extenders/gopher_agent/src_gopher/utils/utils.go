@@ -54,6 +54,7 @@ type TunnelPack struct {
 	Iv        []byte `msgpack:"iv"`
 	Alive     bool   `msgpack:"alive"`
 	Reason    byte   `msgpack:"reason"`
+	Data      []byte `msgpack:"data"`
 }
 
 type TermPack struct {
@@ -63,6 +64,7 @@ type TermPack struct {
 	Iv     []byte `msgpack:"iv"`
 	Alive  bool   `msgpack:"alive"`
 	Status string `msgpack:"status"`
+	Data   []byte `msgpack:"data"`
 }
 
 /// Agent
@@ -78,6 +80,8 @@ type Profile struct {
 	SslCert     []byte   `msgpack:"ssl_cert"`
 	SslKey      []byte   `msgpack:"ssl_key"`
 	CaCert      []byte   `msgpack:"ca_cert"`
+	Sleep       int      `msgpack:"sleep"`
+	Jitter      int      `msgpack:"jitter"`
 }
 
 type SessionInfo struct {
@@ -302,6 +306,11 @@ type AnsExecBof struct {
 	Msgs []byte `msgpack:"msgs"`
 }
 
+type ParamsSleep struct {
+	Sleep  int `msgpack:"sleep"`
+	Jitter int `msgpack:"jitter"`
+}
+
 const (
 	COMMAND_ERROR      = 0
 	COMMAND_PWD        = 1
@@ -324,6 +333,7 @@ const (
 	COMMAND_JOB_LIST   = 18
 	COMMAND_JOB_KILL   = 19
 	COMMAND_REV2SELF   = 20
+	COMMAND_SLEEP      = 21
 
 	COMMAND_TUNNEL_START = 31
 	COMMAND_TUNNEL_STOP  = 32

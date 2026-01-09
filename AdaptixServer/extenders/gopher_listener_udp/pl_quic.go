@@ -100,6 +100,7 @@ type TunnelPack struct {
 	Iv        []byte `msgpack:"iv"`
 	Alive     bool   `msgpack:"alive"`
 	Reason    byte   `msgpack:"reason"`
+	Data      []byte `msgpack:"data"`
 }
 
 type TermPack struct {
@@ -109,6 +110,7 @@ type TermPack struct {
 	Iv     []byte `msgpack:"iv"`
 	Alive  bool   `msgpack:"alive"`
 	Status string `msgpack:"status"`
+	Data   []byte `msgpack:"data"`
 }
 
 // GenerateTLSConfig 生成自签名 TLS 证书配置
@@ -184,15 +186,15 @@ func (handler *QUIC) Start(ts Teamserver) error {
 	// 设置UDP接收缓冲区大小为7MB（quic-go推荐的大小）
 	err = udpConn.SetReadBuffer(7 * 1024 * 1024)
 	if err != nil {
-		udpConn.Close()
-		return fmt.Errorf("failed to set UDP read buffer: %v", err)
+		// Just log warning, don't fail
+		fmt.Printf("Warning: failed to set UDP read buffer: %v\n", err)
 	}
 
 	// 设置UDP发送缓冲区大小为7MB
 	err = udpConn.SetWriteBuffer(7 * 1024 * 1024)
 	if err != nil {
-		udpConn.Close()
-		return fmt.Errorf("failed to set UDP write buffer: %v", err)
+		// Just log warning, don't fail
+		fmt.Printf("Warning: failed to set UDP write buffer: %v\n", err)
 	}
 
 	// 使用配置好的UDP连接创建QUIC listener
@@ -398,9 +400,9 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			// fmt.Printf("[QUIC DEBUG] Sending %d bytes (no encrypt)\n", len(sendData))
 		// }
 
-		if handler.Config.Sleep > 0 {
-			time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
-		}
+		// if handler.Config.Sleep > 0 {
+		// 	time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
+		// }
 
 		err = handler.sendPacket(stream, sendData)
 		if err != nil {
@@ -464,7 +466,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		ts.TsTunnelConnectionResume(agentId, tunPack.ChannelId, false)
 
-		if len(decryptedData) > 4 {
+		if len(tunPack.Data) > 0 {
 			pr, pw, err := ModuleObject.ts.TsTunnelGetPipe(agentId, tunPack.ChannelId)
 			if err != nil {
 				return
@@ -473,7 +475,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			blockDec, _ := aes.NewCipher(tunPack.Key)
 			decStream := cipher.NewCTR(blockDec, tunPack.Iv)
 
-			tunnelData := decryptedData[4:]
+			tunnelData := tunPack.Data
 			if len(tunnelData) > 0 {
 				decBuffer := make([]byte, len(tunnelData))
 				decStream.XORKeyStream(decBuffer, tunnelData)
@@ -517,7 +519,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 
 		ts.TsTerminalConnResume(agentId, terminalId, false)
 
-		if len(decryptedData) > 4 {
+		if len(termPack.Data) > 0 {
 			pr, pw, err := ModuleObject.ts.TsTerminalGetPipe(agentId, terminalId)
 			if err != nil {
 				return
@@ -526,7 +528,7 @@ func (handler *QUIC) handleStartMsg(initMsg StartMsg, decryptedData []byte, stre
 			blockDec, _ := aes.NewCipher(termPack.Key)
 			decStream := cipher.NewCTR(blockDec, termPack.Iv)
 
-			termData := decryptedData[4:]
+			termData := termPack.Data
 			if len(termData) > 0 {
 				decBuffer := make([]byte, len(termData))
 				decStream.XORKeyStream(decBuffer, termData)
@@ -610,9 +612,9 @@ func (handler *QUIC) handleNormalMessage(decryptedData []byte, stream *quic.Stre
 	// 	fmt.Printf("[QUIC DEBUG] handleNormalMessage: Sending %d bytes (no encrypt)\n", len(sendData))
 	// }
 
-	if handler.Config.Sleep > 0 {
-		time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
-	}
+	// if handler.Config.Sleep > 0 {
+	// 	time.Sleep(time.Duration(handler.Config.Sleep) * time.Millisecond)
+	// }
 
 	err = handler.sendPacket(stream, sendData)
 	if err != nil {

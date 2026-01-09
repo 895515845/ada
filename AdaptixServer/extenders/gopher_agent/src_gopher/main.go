@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"gopher/functions"
 	"gopher/utils"
+	mrand "math/rand"
 	"net"
 	"os"
 	"os/user"
@@ -311,6 +312,19 @@ func main() {
 					}
 				}
 				break
+			}
+
+			if profile.Sleep > 0 {
+				sleepDuration := time.Duration(profile.Sleep) * time.Second
+				if profile.Jitter > 0 {
+					jitter := time.Duration(mrand.Intn(profile.Jitter)) * (sleepDuration / 100)
+					if mrand.Intn(2) == 0 {
+						sleepDuration += jitter
+					} else {
+						sleepDuration -= jitter
+					}
+				}
+				time.Sleep(sleepDuration)
 			}
 		}
 

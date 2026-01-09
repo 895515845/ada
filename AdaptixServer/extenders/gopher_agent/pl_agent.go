@@ -623,6 +623,15 @@ func CreateTask(ts Teamserver, agent adaptix.AgentData, args map[string]any) (ad
 	case "screenshot":
 		cmd = Command{Code: COMMAND_SCREENSHOT, Data: nil}
 
+	case "sleep":
+		seconds, ok := args["seconds"].(float64)
+		if !ok || seconds < 1 {
+			err = errors.New("parameter 'seconds' must be a positive integer")
+			goto RET
+		}
+		packerData, _ := msgpack.Marshal(ParamsSleep{Seconds: int(seconds)})
+		cmd = Command{Code: COMMAND_SLEEP, Data: packerData}
+
 	case "socks":
 		taskData.Type = TYPE_TUNNEL
 
@@ -1435,6 +1444,15 @@ func ProcessTasksResult(ts Teamserver, agentData adaptix.AgentData, taskData ada
 					continue
 				}
 				task.Message = fmt.Sprintf("Archive '%s' successfully created", params.Path)
+				task.MessageType = MESSAGE_SUCCESS
+
+			case COMMAND_SLEEP:
+				var params AnsSleep
+				err := msgpack.Unmarshal(cmd.Data, &params)
+				if err != nil {
+					continue
+				}
+				task.Message = fmt.Sprintf("Sleep time changed to %d seconds", params.Seconds)
 				task.MessageType = MESSAGE_SUCCESS
 
 			case COMMAND_ERROR:

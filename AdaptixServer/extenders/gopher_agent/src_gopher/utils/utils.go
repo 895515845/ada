@@ -304,6 +304,14 @@ type AnsExecBof struct {
 	Msgs []byte `msgpack:"msgs"`
 }
 
+type ParamsSleep struct {
+	Seconds int `msgpack:"seconds"`
+}
+
+type AnsSleep struct {
+	Seconds int `msgpack:"seconds"`
+}
+
 const (
 	COMMAND_ERROR      = 0
 	COMMAND_PWD        = 1
@@ -335,4 +343,6 @@ const (
 
 	COMMAND_EXEC_BOF     = 50
 	COMMAND_EXEC_BOF_OUT = 51
+
+	COMMAND_SLEEP = 60
 )

